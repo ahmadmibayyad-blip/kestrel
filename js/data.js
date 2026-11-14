@@ -133,6 +133,25 @@
   };
   K.DAYS = DAYS;
 
+  /* Helpers shared by the live sources. */
+  K.isoDay = (offsetDays) => { const d = new Date(); d.setDate(d.getDate() + offsetDays); return d.toISOString().slice(0, 10); };
+  K.blankDays = () => Array.from({ length: DAYS }, () => ({ spend: 0, impr: 0, clicks: 0, rev: 0, conv: 0 }));
+  /** Puts one day's results into a days array whose last slot is `until` (yesterday). */
+  K.fillDay = function (days, date, until, values) {
+    const i = DAYS - 1 - Math.round((Date.parse(until) - Date.parse(date)) / 864e5);
+    if (i >= 0 && i < DAYS) days[i] = values;
+  };
+  /* A connection is kept for this tab, or on this device if the person chose "remember". */
+  K.connStore = {
+    read(name) { try { return JSON.parse(sessionStorage.getItem(name) || localStorage.getItem(name)); } catch (e) { return null; } },
+    write(name, conn, remember) {
+      const text = JSON.stringify(conn);
+      try { sessionStorage.setItem(name, text); if (remember) localStorage.setItem(name, text); else localStorage.removeItem(name); } catch (e) { /* storage unavailable */ }
+    },
+    remembered(name) { try { return !!localStorage.getItem(name); } catch (e) { return false; } },
+    clear(name) { try { sessionStorage.removeItem(name); localStorage.removeItem(name); } catch (e) { /* storage unavailable */ } },
+  };
+
   /* ---------- rules ---------- */
   K.OPS = { lt: 'is below', gt: 'is above' };
   K.FREQ_MIN = { '15 minutes': 15, '30 minutes': 30, hour: 60, '6 hours': 360, day: 1440 };
@@ -217,17 +236,47 @@
     if (K.state.log.length > 200) K.state.log.length = 200;
   };
 
-  /* Changes go to the sample data, or to the connected Meta account when there is one. */
-  K.canWrite = () => K.mode === 'sample' || K.meta.allowChanges;
-  K.applyStatus = async function (c, status) { if (K.mode === 'meta') await K.meta.setStatus(c, status); c.status = status; };
-  K.applyBudget = async function (c, budget) { if (K.mode === 'meta') await K.meta.setBudget(c, budget); c.budget = budget; };
+  /* Live ad accounts. Each source (js/meta.js, js/google.js) registers itself here under its
+     platform key and provides: conn, allowChanges, fetch(), setStatus(), setBudget(). */
+  K.sources = {};
+  K.connected = () => Object.values(K.sources).filter((s) => s.conn);
 
-  /** Applies a rule. Returns how many campaigns changed and how many changes Meta refused. */
+  /** Reads every connected account and swaps the result in for the sample data. */
+  /* `strict` is a source that must load (the one being connected). Otherwise an account that
+     fails, for example an expired sign-in, is left out and reported in K.liveErrors. */
+  K.loadLive = async function (strict) {
+    const all = K.connected();
+    K.liveErrors = [];
+    if (!all.length) { K.useSample(); return; }
+    const tried = await Promise.all(all.map((s) => s.fetch().then((data) => ({ s, data }), (e) => ({ s, error: s.label + ': ' + e.message }))));
+    const bad = tried.filter((t) => t.error), good = tried.filter((t) => !t.error);
+    const must = bad.find((t) => t.s === strict) || (good.length ? null : bad[0]);
+    if (must) throw new Error(must.error);
+    K.liveErrors = bad.map((t) => t.error);
+    const list = good.map((t) => t.s), parts = good.map((t) => t.data);
+    K.mode = 'live';
+    K.account = { name: list.map((s) => s.conn.account.name).join(' + '), currency: list[0].conn.account.currency };
+    K.setCurrency(K.account.currency);
+    K.campaigns = parts.flatMap((p) => p.campaigns);
+    K.creatives = parts.flatMap((p) => p.creatives).sort((a, b) => b.spent - a.spent).slice(0, 60);
+    K.loadState();
+    K.loadedAt = Date.now();
+  };
+
+  /* Changes go to the sample data, or to the campaign's own ad platform when connected.
+     With no campaign given, canWrite says whether any connected account allows changes. */
+  K.canWrite = (c) => K.mode === 'sample' || (c ? !!(K.sources[c.platform] && K.sources[c.platform].allowChanges) : K.connected().some((s) => s.allowChanges));
+  K.applyStatus = async function (c, status) { if (K.mode === 'live') await K.sources[c.platform].setStatus(c, status); c.status = status; };
+  K.applyBudget = async function (c, budget) { if (K.mode === 'live') await K.sources[c.platform].setBudget(c, budget); c.budget = budget; };
+
+  /** Applies a rule. Returns how many campaigns changed, how many changes the platform refused,
+      and how many were skipped because their account is read-only. */
   K.run = async function (rule) {
     const hits = K.evaluate(rule);
-    let changed = 0, failed = 0;
+    let changed = 0, failed = 0, skipped = 0;
     for (const { c } of hits) {
       const a = rule.action;
+      if (a.type !== 'notify' && !K.canWrite(c)) { skipped++; continue; }
       try {
         if (a.type === 'pause') { await K.applyStatus(c, 'paused'); K.log(rule.name, c.name, 'Paused'); }
         else if (a.type === 'activate') { await K.applyStatus(c, 'active'); K.log(rule.name, c.name, 'Turned back on'); }
@@ -238,11 +287,11 @@
     }
     rule.runs += 1; rule.lastRun = Date.now();
     K.save();
-    return { changed, failed };
+    return { changed, failed, skipped };
   };
 
   /* ---------- persistence (per browser; the page works without it) ---------- */
-  const key = () => (K.mode === 'meta' ? 'kestrel-meta-' + K.account.id : 'kestrel-demo-v1');
+  const key = () => (K.mode === 'live' ? 'kestrel-live-v1' : 'kestrel-demo-v1');
   K.save = function () {
     const o = { rules: K.state.rules, log: K.state.log, range: K.state.range, platform: K.state.platform, auto: K.state.auto, c: {} };
     if (K.mode === 'sample') K.campaigns.forEach((c) => (o.c[c.id] = [c.status, c.budget]));
@@ -253,6 +302,9 @@
     K.state = { rules: [], log: [], range: 7, platform: 'all', auto: false };
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(key())); } catch (e) { saved = null; }
+    if (!saved && K.mode === 'live' && K.sources.meta && K.sources.meta.conn) { // rules saved before Google was added
+      try { saved = JSON.parse(localStorage.getItem('kestrel-meta-' + K.sources.meta.conn.account.id)); } catch (e) { saved = null; }
+    }
     if (saved && Array.isArray(saved.rules)) {
       K.state.rules = saved.rules; K.state.log = saved.log || [];
       K.state.range = saved.range || 7; K.state.auto = !!saved.auto;
