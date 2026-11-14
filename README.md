@@ -152,6 +152,33 @@ What to know:
   budgets set on ad groups are shown but not changed.
 - The Creatives screen lists Pinterest ads by name or Pin number, without previews.
 
+## Create ads in bulk (Meta)
+
+The Create ads screen makes many Meta ads in one go. You give it several images, texts and
+headlines, and every combination becomes one ad: 4 images × 3 texts = 12 ads.
+
+1. Choose the campaign and ad set the ads go into.
+2. Choose a starting point:
+   - **Copy an ad that is already in the ad set.** The new ads keep its Page, button, lead
+     form and destination, and you change only the image, text or headline. This is the way
+     to make lead and messaging ads, because those settings come from an ad that already works.
+   - **New website link ad.** Pick the Facebook Page, the website address and the button.
+3. Add images, texts and headlines. Kestrel lists every ad it would create; untick any you
+   do not want.
+4. Create. Ads are created **paused** unless you tick "start straight away". Each run makes
+   at most 50 ads and asks you to confirm first.
+
+What to know:
+
+- Meta only for now, and images only (JPG or PNG, up to 8 MB). Videos are not supported yet.
+- Ads that promote an existing post, video ads, carousels and ads whose texts Meta mixes
+  automatically cannot be used as the ad to copy; the screen says which and why.
+- It adds ads to existing ad sets. It does not create campaigns or ad sets.
+- The account must have "Allow changes" switched on, and the token needs `ads_management`.
+- If one ad is refused (text too long, for example) the rest are still created, and the
+  result list shows which failed and Meta's reason.
+- On the sample account the screen is a walk-through: nothing is sent anywhere.
+
 ## Results and cost per result
 
 Not every account sells online. For lead, message and engagement campaigns there are no

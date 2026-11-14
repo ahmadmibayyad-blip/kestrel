@@ -432,7 +432,7 @@
   }
 
   /* ---------- shell ---------- */
-  const VIEWS = { overview, campaigns, automations, creatives, reports, activity, connection };
+  const VIEWS = { overview, campaigns, automations, creatives, reports, activity, connection, create: () => K.createView() };
   function render() {
     const v = VIEWS[view()] ? view() : 'overview';
     document.querySelectorAll('.nav a').forEach((a) => a.setAttribute('aria-current', a.getAttribute('href') === '#' + v ? 'page' : 'false'));
@@ -491,7 +491,7 @@
   /** Reads the connected accounts, showing progress on the Connection screen. */
   async function loadLive(work, message) {
     ui.conn.busy = message; ui.conn.error = ''; render();
-    try { await work(); ui.draft = null; ui.sel.clear(); }
+    try { await work(); ui.draft = null; ui.sel.clear(); K.createReset(); }
     catch (err) { ui.conn.error = err.message; if (!live()) location.hash = '#connection'; }
     ui.conn.busy = ''; render();
   }
@@ -709,6 +709,8 @@
   setInterval(autoTick, 60e3);
   window.addEventListener('hashchange', render);
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (['overview', 'reports'].includes(view())) render(); }, 150); });
+  // What the Create ads screen (js/create.js) borrows from this file.
+  K.ui = { toast, render, blocked, live, esc };
   // Reopen the last Meta connection if there is one; otherwise show the sample account.
   if ([K.meta.restore(), K.google.restore(), K.tiktok.restore(), K.snapchat.restore(), K.pinterest.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
   else { render(); autoTick(); }

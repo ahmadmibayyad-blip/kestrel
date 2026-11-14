@@ -135,6 +135,35 @@
     };
   };
 
+  /* ---------- creating ads (used by the Create ads screen, js/create.js) ---------- */
+  const acct = () => 'act_' + M.conn.account.id;
+  /** Ad sets of a campaign. */
+  M.adsets = async (campaignId) => (await all(campaignId + '/adsets', { fields: 'id,name,status', limit: 200 })).map((a) => ({ id: a.id, name: a.name, paused: a.status !== 'ACTIVE' }));
+  /** Ads in an ad set, each with the creative details needed to copy it. */
+  M.adsIn = async function (adsetId) {
+    const list = await all(adsetId + '/ads', { fields: 'id,name,creative{id,name,object_story_spec,object_story_id,asset_feed_spec,thumbnail_url}', limit: 100 });
+    return list.map((a) => {
+      const cr = a.creative || {}, spec = cr.object_story_spec || null, link = spec && spec.link_data;
+      // Only single-image link ads can be copied for now. Say why the others cannot.
+      const why = !spec ? (cr.object_story_id ? 'it promotes an existing post' : 'its creative could not be read')
+        : cr.asset_feed_spec ? 'it uses several texts or images that Meta mixes automatically'
+        : !link ? (spec.video_data ? 'it is a video ad' : 'it is not a single-image link ad')
+        : link.child_attachments ? 'it is a carousel' : '';
+      return { id: a.id, name: a.name, thumb: cr.thumbnail_url || '', spec, why, text: (link && link.message) || '', headline: (link && link.name) || '' };
+    });
+  };
+  /** Facebook Pages this ad account can advertise for. */
+  M.pages = async () => (await all(acct() + '/promote_pages', { fields: 'id,name', limit: 100 })).map((p) => ({ id: p.id, name: p.name }));
+  /** Uploads an image (base64, no data: prefix) to the account's library and returns its hash. */
+  M.uploadImage = async function (base64) {
+    const res = await api(acct() + '/adimages', { bytes: base64 }, 'POST');
+    const img = Object.values(res.images || {})[0];
+    if (!img || !img.hash) throw new Error('Meta did not accept the image.');
+    return img.hash;
+  };
+  M.createCreative = async (name, spec) => (await api(acct() + '/adcreatives', { name, object_story_spec: JSON.stringify(spec) }, 'POST')).id;
+  M.createAd = async (name, adsetId, creativeId, start) => (await api(acct() + '/ads', { name, adset_id: adsetId, creative: JSON.stringify({ creative_id: creativeId }), status: start ? 'ACTIVE' : 'PAUSED' }, 'POST')).id;
+
   M.setStatus = (c, status) => api(c.id, { status: status === 'active' ? 'ACTIVE' : 'PAUSED' }, 'POST');
   M.setBudget = (c, budget) => api(c.id, { daily_budget: Math.round(budget * factor()) }, 'POST');
 
