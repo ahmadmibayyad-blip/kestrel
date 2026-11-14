@@ -443,17 +443,25 @@
   }
   const sure = (msg) => !live() || window.confirm(msg + '\n\nThis changes your live ad account.');
   function summary(what, r) {
-    return r.changed || r.failed
-      ? `${what}: ${r.changed} change${r.changed === 1 ? '' : 's'} made` + (r.failed ? `, ${r.failed} failed (see Activity)` : '') + (r.skipped ? `, ${r.skipped} skipped (read-only account)` : '')
-      : r.skipped ? `${what}: ${r.skipped} skipped because the account is read-only` : `${what}: nothing needed changing`;
+    const n = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+    const parts = [];
+    if (r.changed) parts.push(n(r.changed, 'change') + ' made');
+    if (r.alerts) parts.push(n(r.alerts, 'alert') + ' (see Activity)');
+    if (r.failed) parts.push(`${r.failed} failed (see Activity)`);
+    if (r.skipped) parts.push(`${r.skipped} skipped (read-only account)`);
+    return `${what}: ${parts.length ? parts.join(', ') : 'nothing needed changing'}`;
+  }
+  /** A desktop notification, for automatic runs that happen while the tab is in the background. */
+  function notify(text) {
+    try { if (document.hidden && window.Notification && Notification.permission === 'granted') new Notification('Kestrel', { body: text }); } catch (e) { /* notifications unavailable */ }
   }
   async function runAll() {
     const on = K.state.rules.filter((r) => r.enabled);
     if (!on.length) { toast('No rules are turned on'); return; }
     const pending = on.reduce((s, r) => s + K.evaluate(r).length, 0);
     if (pending && (blocked() || !sure(`Run ${on.length} rules? Up to ${pending} changes will be made.`))) return;
-    const total = { changed: 0, failed: 0, skipped: 0 };
-    for (const r of on) { const x = await K.run(r); total.changed += x.changed; total.failed += x.failed; total.skipped += x.skipped; }
+    const total = { changed: 0, failed: 0, skipped: 0, alerts: 0 };
+    for (const r of on) { const x = await K.run(r); total.changed += x.changed; total.failed += x.failed; total.skipped += x.skipped; total.alerts += x.alerts; }
     toast(summary(`Ran ${on.length} rules`, total));
     render();
   }
@@ -493,7 +501,7 @@
     else if (act === 'sel') { el.checked ? ui.sel.add(id) : ui.sel.delete(id); }
     else if (act === 'sel-all') { ui.sel = new Set(el.checked ? visible().filter((x) => x.name.toLowerCase().includes(ui.q.toLowerCase())).map((x) => x.id) : []); }
     else if (act === 'bulk') {
-      const op = el.dataset.op, r = { changed: 0, failed: 0, skipped: 0 };
+      const op = el.dataset.op, r = { changed: 0, failed: 0, skipped: 0, alerts: 0 };
       const label = { pause: 'Pause', activate: 'Turn on', up: 'Raise the budget of', down: 'Cut the budget of' }[op];
       if (blocked() || !sure(`${label} ${ui.sel.size} selected campaign${ui.sel.size === 1 ? '' : 's'}?`)) return;
       for (const x of K.campaigns.filter((y) => ui.sel.has(y.id))) {
@@ -539,7 +547,11 @@
       if (!K.state.auto && live() && !window.confirm('Run rules automatically while this page is open?\n\nRules that are on will change your live ad accounts without asking each time.')) return;
       K.state.auto = !K.state.auto; K.save();
       toast(K.state.auto ? 'Automatic runs are on' : 'Automatic runs are off');
-      if (K.state.auto) autoTick();
+      if (K.state.auto) {
+        // Ask once for permission to notify when an automatic run does something while this tab is in the background.
+        try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) { /* notifications unavailable */ }
+        autoTick();
+      }
     }
     else if (act === 'export-rules') {
       const a = document.createElement('a');
@@ -678,11 +690,11 @@
     if (ticking || !K.state.auto || !K.canWrite() || ui.conn.busy) return;
     ticking = true;
     try {
-      const total = { changed: 0, failed: 0, skipped: 0 }; let ran = 0;
+      const total = { changed: 0, failed: 0, skipped: 0, alerts: 0 }; let ran = 0;
       for (const r of K.state.rules.filter((x) => x.enabled && K.isDue(x, x.lastRun, Date.now()))) {
-        const x = await K.run(r); total.changed += x.changed; total.failed += x.failed; total.skipped += x.skipped; ran++;
+        const x = await K.run(r); total.changed += x.changed; total.failed += x.failed; total.skipped += x.skipped; total.alerts += x.alerts; ran++;
       }
-      if (total.changed || total.failed) { toast(summary('Automatic run', total)); render(); }
+      if (total.changed || total.failed || total.alerts) { const text = summary('Automatic run', total); toast(text); notify(text); render(); }
       else if (ran && view() === 'automations' && !ui.draft) render();
     } finally { ticking = false; }
   }

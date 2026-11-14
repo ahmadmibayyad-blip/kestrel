@@ -152,6 +152,22 @@ What to know:
   budgets set on ad groups are shown but not changed.
 - The Creatives screen lists Pinterest ads by name or Pin number, without previews.
 
+## Alerts and notifications
+
+A rule whose action is "send me an alert" changes nothing. It records which campaigns matched
+and the numbers that triggered it, for example "CTR 0.52% over 3 days".
+
+- **In the app**, alerts appear in the Activity log. With automatic runs switched on, the
+  browser can also show a desktop notification when a run does something while the tab is in
+  the background (it asks for permission the first time).
+- **From the scheduler**, add a repository secret `KESTREL_WEBHOOK_URL` holding a Slack or
+  Discord incoming-webhook address. A message is sent whenever a scheduled run changes a
+  campaign, raises an alert, would change something in a dry run, or stops with an error such
+  as an expired token. Runs where nothing happens send nothing.
+- The message names campaigns in full, because a webhook is private. The public Actions log
+  keeps hiding names unless `KESTREL_LOG_NAMES` is set.
+- Alert rules send their alerts in dry-run mode as well, since an alert changes nothing.
+
 ## Safety
 
 - **Read-only by default.** Each connected account starts read-only and is allowed to change
@@ -213,7 +229,6 @@ What to know:
 - GitHub can start scheduled runs several minutes late, and pauses schedules in repositories
   with no activity for 60 days. A failed run (for example an expired token) shows as a
   failed workflow, which GitHub emails you about.
-- "Send me an alert" rules only write a line in the log; no message is sent.
 - To run it somewhere else, set the same environment variables and run
   `node automation/run.js` on any machine with Node 18 or later.
 

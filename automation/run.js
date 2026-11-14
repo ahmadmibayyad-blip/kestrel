@@ -24,6 +24,9 @@
    TikTok Ads (optional):
      TIKTOK_ACCESS_TOKEN            access token with Ads Management and Reporting permissions
      TIKTOK_ADVERTISER_ID           the advertiser ID
+   Notifications (optional):
+     KESTREL_WEBHOOK_URL            Slack or Discord incoming-webhook address. A summary is sent when a
+                                    run changes something, raises an alert or fails.
    Behaviour:
      KESTREL_APPLY         "true" to change the accounts. Anything else is a dry run.
      KESTREL_LOG_NAMES     "true" to print campaign names. Off by default: logs may be public.
@@ -107,7 +110,7 @@ async function connectPinterest(K, env, apply) {
   return true;
 }
 
-async function main(env, now) {
+async function run(env, now) {
   const say = (s) => console.log(s);
   const dir = __dirname;
   const rules = readJson(path.join(dir, 'rules.json'), []);
@@ -139,31 +142,60 @@ async function main(env, now) {
   K.liveErrors.forEach((e) => say('Could not load ' + e));
   K.connected().forEach((s) => { if (s.note) say('Note: ' + s.note); });
 
+  // The run log may be public, so it hides campaign names unless asked. The notification goes
+  // to a private webhook, so it always uses them.
   const label = (c) => `${K.sources[c.platform].label} ` + (names ? `"${c.name}"` : 'campaign …' + String(c.id).slice(-4));
+  const full = (c) => `${c.name} (${K.sources[c.platform].label})`;
+  const note = [];
   for (const rule of due) {
     const hits = K.evaluate(rule);
     say(`\n"${rule.name}": ${hits.length} campaign${hits.length === 1 ? '' : 's'} match.`);
-    if (apply) {
+    const lines = [];
+    if (rule.action.type === 'notify') {
+      // An alert changes nothing, so it is sent in a dry run as well.
+      hits.forEach((h) => { say(`  ${label(h.c)}: alert, ${K.hitText(rule, h)}`); lines.push(`${full(h.c)}: ${K.hitText(rule, h)}`); });
+    } else if (apply) {
       const before = K.state.log.length;
       const r = await K.run(rule);
       failed += r.failed;
       K.state.log.slice(0, K.state.log.length - before).reverse().forEach((e) => {
         const c = K.campaigns.find((x) => x.id === e.cid);
         say(`  ${c ? label(c) : 'campaign'}: ${e.text}`);
+        lines.push(`${c ? full(c) : e.campaign}: ${e.text}`);
       });
     } else {
       hits.forEach(({ c }) => {
         const a = rule.action;
-        const what = a.type === 'pause' ? 'would pause' : a.type === 'activate' ? 'would turn on' : a.type === 'notify' ? 'would alert'
+        const what = a.type === 'pause' ? 'would pause' : a.type === 'activate' ? 'would turn on'
           : `would change daily budget ${K.fmt.money(c.budget)} to ${K.fmt.money(K.nextBudget(c, a))}`;
         say(`  ${label(c)}: ${what}`);
+        lines.push(`${full(c)}: ${what}`);
       });
     }
+    if (lines.length) note.push(`${rule.name}${rule.action.type === 'notify' ? ' (alert)' : ''}`, ...lines.map((l) => '  • ' + l));
     state[rule.id] = now;
   }
   fs.writeFileSync(stateFile, JSON.stringify(state) + '\n');
+  K.liveErrors.forEach((e) => note.push('Could not load ' + e));
+  if (note.length) await post(env, [`Kestrel${apply ? '' : ' dry run (nothing was changed)'} on ${K.account.name}`, ...note].join('\n'));
   if (failed) { say(`\n${failed} problem${failed === 1 ? '' : 's'} in this run.`); return 1; }
   return 0;
+}
+
+/** Sends a message to KESTREL_WEBHOOK_URL (Slack, Discord or any service that accepts {"text": ...}). Never fails the run. */
+async function post(env, text) {
+  const url = (env.KESTREL_WEBHOOK_URL || '').trim();
+  if (!url) return;
+  try {
+    const discord = /(^|\.)discord(app)?\.com$/.test(new URL(url).hostname);
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(discord ? { content: text.slice(0, 1900) } : { text }) });
+    console.log(res.ok ? 'Notification sent.' : 'The notification was not accepted (' + res.status + ').');
+  } catch (e) { console.log('Could not send the notification.'); }
+}
+
+async function main(env, now) {
+  try { return await run(env, now); }
+  catch (err) { await post(env, 'Kestrel scheduler stopped: ' + err.message); throw err; }
 }
 
 module.exports = { main };

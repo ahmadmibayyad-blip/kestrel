@@ -230,6 +230,8 @@
     if (a.type === 'dec') return `decrease the daily budget by ${a.pct}%` + (a.cap > 0 ? `, no lower than ${symbol}${a.cap}` : '');
     return K.ACTIONS[a.type];
   };
+  /** The measured values that made a campaign match a rule, e.g. "ROAS 0.52x over 3 days". */
+  K.hitText = (rule, hit) => rule.conditions.map((cd, i) => `${K.METRICS[cd.metric].label} ${K.METRICS[cd.metric].fmt(hit.values[i].v)} over ${cd.window} ${cd.window === 1 ? 'day' : 'days'}`).join(', ');
   K.ruleText = function (r) {
     const joiner = r.match === 'any' ? ' or ' : ' and ';
     return `When ${r.conditions.map(K.conditionText).join(joiner)}, ${K.actionText(r.action)}.`;
@@ -291,21 +293,22 @@
       and how many were skipped because their account is read-only. */
   K.run = async function (rule) {
     const hits = K.evaluate(rule);
-    let changed = 0, failed = 0, skipped = 0;
-    for (const { c } of hits) {
+    let changed = 0, failed = 0, skipped = 0, alerts = 0;
+    for (const h of hits) {
+      const c = h.c;
       const a = rule.action;
       if (a.type !== 'notify' && !K.canWrite(c)) { skipped++; continue; }
       try {
         if (a.type === 'pause') await K.changeStatus(c, 'paused', rule.name);
         else if (a.type === 'activate') await K.changeStatus(c, 'active', rule.name);
-        else if (a.type === 'notify') K.log(rule.name, c.name, 'Alert sent', { cid: c.id });
+        else if (a.type === 'notify') { K.log(rule.name, c.name, 'Alert: ' + K.hitText(rule, h), { cid: c.id }); alerts++; continue; }
         else await K.changeBudget(c, K.nextBudget(c, a), rule.name);
         changed++;
       } catch (e) { failed++; K.log(rule.name, c.name, 'Failed: ' + e.message, { cid: c.id }); }
     }
     rule.runs += 1; rule.lastRun = Date.now();
     K.save();
-    return { changed, failed, skipped };
+    return { changed, failed, skipped, alerts };
   };
 
   /* Every change to a campaign goes through these two, so each one is logged with what it
