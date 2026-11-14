@@ -25,7 +25,7 @@
   function axisFmt(v, unit) {
     const a = Math.abs(v);
     const s = a >= 1e6 ? (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : a >= 1e3 ? (v / 1e3).toFixed(1).replace(/\.0$/, '') + 'k' : String(+v.toFixed(2));
-    return unit === '$' ? '$' + s : s + (unit || '');
+    return unit === '$' ? K.sym() + s : s + (unit || '');
   }
 
   /** opts: { labels[], series[{name,color,values[]}], fmt, unit } */

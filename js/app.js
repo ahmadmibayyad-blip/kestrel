@@ -9,6 +9,8 @@
   const pdot = (p) => `<i class="pdot" style="background:${K.PLATFORMS[p].color}" title="${K.PLATFORMS[p].name}"></i>`;
   const range = () => K.state.range;
   const view = () => (location.hash.replace('#', '') || 'overview');
+  const live = () => K.mode === 'meta';
+  ui.conn = { token: '', accounts: null, error: '', busy: '', remember: false };
 
   function ago(t) {
     if (!t) return 'never';
@@ -43,11 +45,12 @@
     const on = K.state.rules.filter((r) => r.enabled);
     const pending = new Set(on.flatMap((r) => K.evaluate(r).map((h) => h.c.id))).size;
     main.innerHTML = `
-      <header class="view-head"><h1>Overview</h1><p class="muted">Sample account, last ${n} days${K.state.platform === 'all' ? '' : ', ' + K.PLATFORMS[K.state.platform].name + ' only'}.</p></header>
+      <header class="view-head"><h1>Overview</h1><p class="muted">${live() ? esc(K.account.name) : 'Sample account'}, last ${n} days${K.state.platform === 'all' ? '' : ', ' + K.PLATFORMS[K.state.platform].name + ' only'}.</p></header>
+      ${live() && !K.campaigns.length ? '<div class="panel"><p class="empty">This ad account has no active campaigns and no spend in the last 60 days.</p></div>' : ''}
       <section class="tiles">${tiles}</section>
       <section class="grid-2">
         <div class="panel"><h2>Spend and revenue per day</h2><div id="ch-line"></div></div>
-        <div class="panel"><h2>Top campaigns by revenue</h2><div class="legend">${Object.entries(K.PLATFORMS).map(([, p]) => `<span><i style="background:${p.color}"></i>${p.name}</span>`).join('')}</div><div id="ch-bar"></div></div>
+        <div class="panel"><h2>Top campaigns by revenue</h2><div class="legend">${Object.entries(K.PLATFORMS).filter(([k]) => cs.some((c) => c.platform === k)).map(([, p]) => `<span><i style="background:${p.color}"></i>${p.name}</span>`).join('')}</div><div id="ch-bar"></div></div>
       </section>
       <section class="grid-2">
         <div class="panel"><h2>Automations</h2>
@@ -102,7 +105,8 @@
             <td><input type="checkbox" data-act="sel" data-id="${c.id}" aria-label="Select ${esc(c.name)}" ${ui.sel.has(c.id) ? 'checked' : ''}></td>
             <td><button class="switch" role="switch" aria-checked="${c.status === 'active'}" data-act="toggle" data-id="${c.id}" aria-label="${esc(c.name)} is ${c.status}"></button></td>
             <td class="left name">${pdot(c.platform)}${esc(c.name)}${c.status === 'paused' ? ' <span class="tag">Paused</span>' : ''}</td>
-            <td><span class="budget">$<input type="number" min="1" step="10" value="${c.budget}" data-budget="${c.id}" aria-label="Daily budget for ${esc(c.name)}"></span></td>
+            <td>${c.noBudget ? '<span class="muted small" title="This campaign sets budgets on its ad sets">Set on ad sets</span>'
+              : `<span class="budget">${esc(K.sym())}<input type="number" min="1" step="10" value="${c.budget}" data-budget="${c.id}" aria-label="Daily budget for ${esc(c.name)}"></span>`}</td>
             ${COLS.map((k2) => `<td>${M[k2].fmt(m[k2])}</td>`).join('')}
           </tr>`).join('') || `<tr><td colspan="${4 + COLS.length}" class="empty">No campaigns match "${esc(ui.q)}". Clear the search to see them all.</td></tr>`}
         </tbody>
@@ -144,7 +148,7 @@
           <button class="x" data-act="del-cond" data-i="${i}" aria-label="Remove condition">×</button></li>`).join('')}</ul>
         <p><button class="btn sm ghost" data-act="add-cond">Add condition</button></p>
         <p>then ${tok('action.type', Object.entries(K.ACTIONS), a.type, 'Action')}
-          ${budget ? `by ${numTok('action.pct', a.pct, 'Percent', 1)}% ${a.type === 'inc' ? 'up to' : 'no lower than'} $${numTok('action.cap', a.cap, 'Budget limit', 10)}` : ''}.
+          ${budget ? `by ${numTok('action.pct', a.pct, 'Percent', 1)}% ${a.type === 'inc' ? 'up to' : 'no lower than'} ${esc(K.sym())}${numTok('action.cap', a.cap, 'Budget limit', 10)}` : ''}.
           Check every ${tok('freq', [['15 minutes', '15 minutes'], ['30 minutes', '30 minutes'], ['hour', 'hour'], ['6 hours', '6 hours'], ['day', 'day']], r.freq, 'Frequency')}.</p>
       </div>
       <div id="preview" class="preview">${previewHtml(r)}</div>
@@ -192,14 +196,15 @@
       <div class="toolbar"><label>Sort by <select id="csort">${opt([['roas', 'ROAS'], ['spend', 'Spend'], ['ctr', 'CTR'], ['conv', 'Purchases'], ['fatigue', 'Most tired first']], ui.cSort)}</select></label></div>
       <div class="creative-grid">${list.map(({ a, m, drop }) => `
         <article class="creative">
-          <div class="thumb" style="--h:${a.hue}"><span class="format">${a.format}</span><span class="hook">${esc(a.name)}</span></div>
+          <div class="thumb" style="--h:${a.hue}">${a.thumb ? `<img src="${esc(a.thumb)}" alt="" loading="lazy">` : `<span class="hook">${esc(a.name)}</span>`}<span class="format">${esc(a.format)}</span></div>
           <div class="creative-body">
             <h3>${esc(a.name)}</h3>
             <p class="muted small">${pdot(a.campaign.platform)}${esc(a.campaign.name)}</p>
             <p class="badges">${m.roas === best ? '<span class="badge good">★ Best ROAS</span>' : ''}${drop < -20 ? `<span class="badge warn">▼ Tired, CTR down ${Math.abs(drop).toFixed(0)}%</span>` : ''}</p>
             <dl><div><dt>ROAS</dt><dd>${F.x(m.roas)}</dd></div><div><dt>Spend</dt><dd>${F.money(m.spend)}</dd></div><div><dt>CTR</dt><dd>${F.pct(m.ctr)}</dd></div><div><dt>Purchases</dt><dd>${F.int(m.conv)}</dd></div></dl>
           </div>
-        </article>`).join('')}</div>`;
+        </article>`).join('')}</div>
+      ${list.length ? '' : '<div class="panel"><p class="empty">No ads with spend in the last 30 days.</p></div>'}`;
   }
 
   /* ---------- reports ---------- */
@@ -246,21 +251,80 @@
       <header class="view-head"><h1>Activity</h1><p class="muted">Every change made to a campaign, by a rule or by hand.</p></header>
       ${K.state.log.length ? `<div class="panel flush"><div class="table-wrap"><table class="data"><thead><tr><th class="left">When</th><th class="left">Campaign</th><th class="left">Change</th><th class="left">Made by</th></tr></thead><tbody class="left-all">${logRows(K.state.log)}</tbody></table></div></div>`
         : '<div class="panel"><p class="empty">No changes yet. Run a rule from Automations, or edit a campaign, and it shows up here.</p></div>'}
-      <p><button class="btn ghost danger" data-act="reset">Reset the demo data</button></p>`;
+      <p><button class="btn ghost danger" data-act="reset">${live() ? 'Clear the rules and log for this account' : 'Reset the demo data'}</button></p>`;
+  }
+
+  /* ---------- connection ---------- */
+  function connection() {
+    const cn = ui.conn, a = K.account;
+    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta.</p></header>`;
+    if (cn.busy) { main.innerHTML = head + `<div class="panel"><p class="empty">${esc(cn.busy)}</p></div>`; return; }
+    if (live()) {
+      main.innerHTML = head + `
+        <div class="panel"><h2>Connected to ${esc(a.name)}</h2>
+          <p>Ad account ${esc(a.id)}, ${esc(a.currency)}. Showing ${K.campaigns.length} campaigns and the last ${K.DAYS} days of results, loaded ${ago(K.meta.loadedAt)}.</p>
+          <p><button class="btn" data-act="refresh">Load the latest data</button> <button class="btn ghost danger" data-act="disconnect">Disconnect</button></p>
+        </div>
+        <div class="panel"><h2>Changes to your Meta account</h2>
+          <p class="allow"><button class="switch" role="switch" aria-checked="${K.meta.allowChanges}" data-act="toggle-allow" aria-label="Allow changes"></button>
+            <span><b>${K.meta.allowChanges ? 'Changes are allowed.' : 'Read-only.'}</b> ${K.meta.allowChanges
+              ? 'Pausing, turning on and budget edits here are sent to Meta and affect live spend. Each one asks you to confirm first.'
+              : 'Kestrel only reads. Rules still show what they would change, but nothing is sent to Meta until you turn this on.'}</span></p>
+          <p class="hint">Changes need a token with the ads_management permission. Rules run when you press Run while this page is open. Running them on a schedule needs a server, which this version does not have.</p>
+        </div>`;
+      return;
+    }
+    main.innerHTML = head + `
+      ${cn.error ? `<div class="panel error" role="alert"><b>Could not connect.</b> ${esc(cn.error)}</div>` : ''}
+      <div class="panel"><h2>Connect a Meta ad account</h2>
+        <ol class="how">
+          <li>In Meta for Developers, create an app and add the Marketing API.</li>
+          <li>Create an access token with the <b>ads_read</b> permission. Add <b>ads_management</b> only if you want Kestrel to pause campaigns or change budgets.</li>
+          <li>Paste the token here.</li>
+        </ol>
+        <label class="field"><span>Access token</span><input type="password" id="token" autocomplete="off" spellcheck="false" value="${esc(cn.token)}" placeholder="Paste your Meta access token"></label>
+        ${cn.accounts ? (cn.accounts.length ? `
+          <label class="field"><span>Ad account</span><select id="acct">${cn.accounts.map((x, i) => `<option value="${i}">${esc(x.name)} (${esc(x.id)}, ${esc(x.currency)})${x.active ? '' : ', not active'}</option>`).join('')}</select></label>
+          <label class="check"><input type="checkbox" id="remember" ${cn.remember ? 'checked' : ''}> Remember this connection on this device</label>
+          <p><button class="btn primary" data-act="connect">Connect this account</button> <button class="btn ghost" data-act="find-accounts">Look again</button></p>`
+          : `<p class="empty">This token cannot see any ad accounts. Check it was created by someone with access to the account.</p><p><button class="btn" data-act="find-accounts">Look again</button></p>`)
+          : `<p><button class="btn primary" data-act="find-accounts">Find my ad accounts</button></p>`}
+        <p class="hint">The token stays in this browser and is sent only to graph.facebook.com. Unless you tick "remember", it is forgotten when you close this tab. Kestrel starts read-only.</p>
+      </div>`;
   }
 
   /* ---------- shell ---------- */
-  const VIEWS = { overview, campaigns, automations, creatives, reports, activity };
+  const VIEWS = { overview, campaigns, automations, creatives, reports, activity, connection };
   function render() {
     const v = VIEWS[view()] ? view() : 'overview';
     document.querySelectorAll('.nav a').forEach((a) => a.setAttribute('aria-current', a.getAttribute('href') === '#' + v ? 'page' : 'false'));
     $('#range').value = range(); $('#platform').value = K.state.platform;
+    $('#platform').closest('label').hidden = live();
+    $('#side-note').textContent = live()
+      ? `Connected to ${K.account.name}. ${K.meta.allowChanges ? 'Changes are sent to Meta.' : 'Read-only.'}`
+      : 'Demo account with sample data. Nothing here touches a real ad account.';
     K.hideTip(); VIEWS[v](); K.fitToks(main);
   }
-  function runAll() {
+  /** True when a change must not go ahead: the live account is read-only. */
+  function blocked() {
+    if (K.canWrite()) return false;
+    toast('Read-only. Allow changes on the Connection screen to change your Meta account.');
+    return true;
+  }
+  const sure = (msg) => !live() || window.confirm(msg + '\n\nThis changes your live Meta ad account.');
+  function summary(what, r) {
+    return r.changed || r.failed
+      ? `${what}: ${r.changed} change${r.changed === 1 ? '' : 's'} made` + (r.failed ? `, ${r.failed} failed (see Activity)` : '')
+      : `${what}: nothing needed changing`;
+  }
+  async function runAll() {
     const on = K.state.rules.filter((r) => r.enabled);
-    const n = on.reduce((s, r) => s + K.run(r), 0);
-    toast(n ? `Ran ${on.length} rules, ${n} change${n === 1 ? '' : 's'} made` : `Ran ${on.length} rules, nothing needed changing`);
+    if (!on.length) { toast('No rules are turned on'); return; }
+    const pending = on.reduce((s, r) => s + K.evaluate(r).length, 0);
+    if (pending && (blocked() || !sure(`Run ${on.length} rules? Up to ${pending} changes will be made.`))) return;
+    const total = { changed: 0, failed: 0 };
+    for (const r of on) { const x = await K.run(r); total.changed += x.changed; total.failed += x.failed; }
+    toast(summary(`Ran ${on.length} rules`, total));
     render();
   }
   function setPath(obj, path, val) {
@@ -278,23 +342,41 @@
     K.save(); return true;
   }
 
-  document.addEventListener('click', (e) => {
-    const el = e.target.closest('[data-act]'); if (!el) return;
+  /** Reads the account from Meta, showing progress on the Connection screen. */
+  async function loadLive(work, message) {
+    ui.conn.busy = message; ui.conn.error = ''; render();
+    try { await work(); ui.draft = null; ui.sel.clear(); }
+    catch (err) { ui.conn.error = err.message; if (!live()) location.hash = '#connection'; }
+    ui.conn.busy = ''; render();
+  }
+
+  async function onClick(el) {
     const act = el.dataset.act, id = el.dataset.id;
     const c = id && K.campaigns.find((x) => x.id === id);
     const rule = id && K.state.rules.find((x) => x.id === id);
     if (act === 'sort') { const k = el.dataset.key; ui.sort = { key: k, dir: ui.sort.key === k ? -ui.sort.dir : k === 'name' ? 1 : -1 }; }
-    else if (act === 'toggle') { c.status = c.status === 'active' ? 'paused' : 'active'; K.log('You', c.name, c.status === 'active' ? 'Turned back on' : 'Paused'); K.save(); }
+    else if (act === 'toggle') {
+      const to = c.status === 'active' ? 'paused' : 'active';
+      if (blocked() || !sure(`${to === 'paused' ? 'Pause' : 'Turn on'} "${c.name}"?`)) return;
+      await K.applyStatus(c, to); K.log('You', c.name, to === 'active' ? 'Turned back on' : 'Paused'); K.save();
+    }
     else if (act === 'sel') { el.checked ? ui.sel.add(id) : ui.sel.delete(id); }
     else if (act === 'sel-all') { ui.sel = new Set(el.checked ? visible().filter((x) => x.name.toLowerCase().includes(ui.q.toLowerCase())).map((x) => x.id) : []); }
     else if (act === 'bulk') {
-      const op = el.dataset.op; let n = 0;
-      K.campaigns.filter((x) => ui.sel.has(x.id)).forEach((x) => {
-        if (op === 'pause' && x.status === 'active') { x.status = 'paused'; K.log('You', x.name, 'Paused'); n++; }
-        if (op === 'activate' && x.status === 'paused') { x.status = 'active'; K.log('You', x.name, 'Turned back on'); n++; }
-        if (op === 'up' || op === 'down') { const b = Math.max(1, Math.round(x.budget * (op === 'up' ? 1.1 : 0.9))); K.log('You', x.name, `Daily budget ${F.money(x.budget)} to ${F.money(b)}`); x.budget = b; n++; }
-      });
-      K.save(); toast(`${n} campaign${n === 1 ? '' : 's'} changed`);
+      const op = el.dataset.op, r = { changed: 0, failed: 0 };
+      const label = { pause: 'Pause', activate: 'Turn on', up: 'Raise the budget of', down: 'Cut the budget of' }[op];
+      if (blocked() || !sure(`${label} ${ui.sel.size} selected campaign${ui.sel.size === 1 ? '' : 's'}?`)) return;
+      for (const x of K.campaigns.filter((y) => ui.sel.has(y.id))) {
+        try {
+          if (op === 'pause' && x.status === 'active') { await K.applyStatus(x, 'paused'); K.log('You', x.name, 'Paused'); r.changed++; }
+          else if (op === 'activate' && x.status === 'paused') { await K.applyStatus(x, 'active'); K.log('You', x.name, 'Turned back on'); r.changed++; }
+          else if ((op === 'up' || op === 'down') && !x.noBudget) {
+            const from = x.budget, b = Math.max(1, Math.round(from * (op === 'up' ? 1.1 : 0.9)));
+            await K.applyBudget(x, b); K.log('You', x.name, `Daily budget ${F.money(from)} to ${F.money(b)}`); r.changed++;
+          }
+        } catch (err) { r.failed++; K.log('You', x.name, 'Failed: ' + err.message); }
+      }
+      K.save(); toast(summary('Bulk edit', r));
     }
     else if (act === 'run-all') return runAll();
     else if (act === 'toggle-rule') { rule.enabled = !rule.enabled; if (ui.draft && ui.draft.id === id) ui.draft.enabled = rule.enabled; K.save(); }
@@ -305,13 +387,39 @@
     else if (act === 'run-rule') {
       if (!saveDraft()) return;
       const saved = K.state.rules.find((x) => x.id === ui.draft.id);
-      const n = K.run(saved); ui.draft = JSON.parse(JSON.stringify(saved));
-      toast(n ? `"${saved.name}" changed ${n} campaign${n === 1 ? '' : 's'}` : `"${saved.name}" ran, nothing needed changing`);
+      const n = K.evaluate(saved).length;
+      if (n && (blocked() || !sure(`Run "${saved.name}"? It will change ${n} campaign${n === 1 ? '' : 's'}.`))) return;
+      const r = await K.run(saved); ui.draft = JSON.parse(JSON.stringify(saved));
+      toast(summary(`"${saved.name}"`, r));
     }
     else if (act === 'del-rule') { K.state.rules = K.state.rules.filter((x) => x.id !== ui.draft.id); toast(`Deleted "${ui.draft.name}"`); ui.draft = null; K.save(); }
     else if (act === 'csv') return csv();
-    else if (act === 'reset') { K.reset(); ui.draft = null; ui.sel.clear(); toast('Demo data reset'); }
+    else if (act === 'reset') { K.reset(); ui.draft = null; ui.sel.clear(); toast(live() ? 'Rules and log cleared' : 'Demo data reset'); }
+    else if (act === 'find-accounts') {
+      const token = ui.conn.token.trim();
+      if (!token) { toast('Paste an access token first'); return; }
+      ui.conn.busy = 'Looking for your ad accounts…'; ui.conn.error = ''; render();
+      try { ui.conn.accounts = await K.meta.accounts(token); } catch (err) { ui.conn.error = err.message; ui.conn.accounts = null; }
+      ui.conn.busy = '';
+    }
+    else if (act === 'connect') {
+      const account = ui.conn.accounts[+$('#acct').value], remember = $('#remember').checked, token = ui.conn.token.trim();
+      ui.conn.remember = remember;
+      await loadLive(() => K.meta.connect(token, account, remember), `Reading ${account.name} from Meta…`);
+      if (live()) { ui.conn.token = ''; ui.conn.accounts = null; toast(`Connected to ${account.name}`); }
+      return;
+    }
+    else if (act === 'refresh') { await loadLive(() => K.meta.load(), 'Loading the latest data from Meta…'); if (!ui.conn.error) toast('Data updated'); else toast(ui.conn.error); return; }
+    else if (act === 'disconnect') { K.meta.disconnect(); ui.draft = null; ui.sel.clear(); toast('Disconnected. Showing the sample account.'); }
+    else if (act === 'toggle-allow') {
+      if (!K.meta.allowChanges && !window.confirm('Allow Kestrel to pause campaigns and change budgets in your live Meta ad account?\n\nEach change will still ask you to confirm.')) return;
+      K.meta.setAllow(!K.meta.allowChanges);
+    }
     render();
+  }
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act]'); if (!el) return;
+    onClick(el).catch((err) => { toast(err.message); render(); });
   });
 
   document.addEventListener('change', (e) => {
@@ -323,18 +431,24 @@
     else if (t.id === 'rmetric') { ui.rMetric = t.value; render(); }
     else if (t.id === 'tpl' && t.value !== '') { ui.draft = K.newRule(K.TEMPLATES[+t.value]); render(); }
     else if (t.dataset.budget) {
-      const c = K.campaigns.find((x) => x.id === t.dataset.budget), b = Math.max(1, Math.round(+t.value || c.budget));
-      if (b !== c.budget) { K.log('You', c.name, `Daily budget ${F.money(c.budget)} to ${F.money(b)}`); c.budget = b; K.save(); toast('Budget updated'); }
-      render();
+      const c = K.campaigns.find((x) => x.id === t.dataset.budget), from = c.budget, b = Math.max(1, Math.round(+t.value || from));
+      if (b === from || blocked() || !sure(`Change the daily budget of "${c.name}" from ${F.money(from)} to ${F.money(b)}?`)) { render(); return; }
+      K.applyBudget(c, b)
+        .then(() => { K.log('You', c.name, `Daily budget ${F.money(from)} to ${F.money(b)}`); K.save(); toast('Budget updated'); })
+        .catch((err) => toast(err.message))
+        .then(render);
     }
     else if (t.dataset.d && ui.draft && t.tagName === 'SELECT') { setPath(ui.draft, t.dataset.d, t.value); $('#editor').innerHTML = editorHtml(); K.fitToks(main); }
   });
   document.addEventListener('input', (e) => {
     const t = e.target;
     if (t.id === 'q') { ui.q = t.value; campaigns(); const q = $('#q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    else if (t.id === 'token') { ui.conn.token = t.value; }
     else if (t.dataset.d && ui.draft && t.tagName === 'INPUT') { setPath(ui.draft, t.dataset.d, t.value); $('#preview').innerHTML = previewHtml(ui.draft); K.fitToks(main); }
   });
   window.addEventListener('hashchange', render);
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (['overview', 'reports'].includes(view())) render(); }, 150); });
-  render();
+  // Reopen the last Meta connection if there is one; otherwise show the sample account.
+  if (K.meta.restore()) loadLive(() => K.meta.load(), `Reading ${K.meta.conn.account.name} from Meta…`);
+  else render();
 })();

@@ -18,8 +18,18 @@
     tiktok: { name: 'TikTok', color: 'var(--s3)' },
   };
 
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-  const money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+  let money, money2, symbol = '$';
+  K.setCurrency = function (cur) {
+    try {
+      money = new Intl.NumberFormat('en-US', { style: 'currency', currency: cur, maximumFractionDigits: 0 });
+      money2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: cur, minimumFractionDigits: 2 });
+    } catch (e) { return K.setCurrency('USD'); }
+    K.currency = cur;
+    symbol = money.formatToParts(0).find((x) => x.type === 'currency').value;
+  };
+  K.sym = () => symbol;
+  K.setCurrency('USD');
+  K.mode = 'sample'; // 'sample' or 'meta'
   const int = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
   K.fmt = {
     money: (v) => money.format(v),
@@ -170,6 +180,7 @@
       .filter((m) => m.hit && (rule.conditions.length > 0))
       .filter((m) => {
         const a = rule.action;
+        if ((a.type === 'inc' || a.type === 'dec') && m.c.noBudget) return false; // budget is set on its ad sets
         if (a.type === 'inc' && a.cap > 0 && m.c.budget >= a.cap) return false; // already at the ceiling
         if (a.type === 'dec' && a.cap > 0 && m.c.budget <= a.cap) return false; // already at the floor
         return true;
@@ -184,12 +195,12 @@
 
   K.conditionText = function (cd) {
     const m = K.METRICS[cd.metric];
-    const val = m.unit === '$' ? '$' + cd.value : cd.value + m.unit;
+    const val = m.unit === '$' ? symbol + cd.value : cd.value + m.unit;
     return `${m.label} ${K.OPS[cd.op]} ${val} over the last ${cd.window} ${cd.window === 1 ? 'day' : 'days'}`;
   };
   K.actionText = function (a) {
-    if (a.type === 'inc') return `increase the daily budget by ${a.pct}%` + (a.cap > 0 ? `, up to $${a.cap}` : '');
-    if (a.type === 'dec') return `decrease the daily budget by ${a.pct}%` + (a.cap > 0 ? `, no lower than $${a.cap}` : '');
+    if (a.type === 'inc') return `increase the daily budget by ${a.pct}%` + (a.cap > 0 ? `, up to ${symbol}${a.cap}` : '');
+    if (a.type === 'dec') return `decrease the daily budget by ${a.pct}%` + (a.cap > 0 ? `, no lower than ${symbol}${a.cap}` : '');
     return K.ACTIONS[a.type];
   };
   K.ruleText = function (r) {
@@ -202,45 +213,58 @@
     if (K.state.log.length > 200) K.state.log.length = 200;
   };
 
-  /** Applies a rule to the sample account. Returns how many campaigns changed. */
-  K.run = function (rule) {
+  /* Changes go to the sample data, or to the connected Meta account when there is one. */
+  K.canWrite = () => K.mode === 'sample' || K.meta.allowChanges;
+  K.applyStatus = async function (c, status) { if (K.mode === 'meta') await K.meta.setStatus(c, status); c.status = status; };
+  K.applyBudget = async function (c, budget) { if (K.mode === 'meta') await K.meta.setBudget(c, budget); c.budget = budget; };
+
+  /** Applies a rule. Returns how many campaigns changed and how many changes Meta refused. */
+  K.run = async function (rule) {
     const hits = K.evaluate(rule);
-    hits.forEach(({ c }) => {
+    let changed = 0, failed = 0;
+    for (const { c } of hits) {
       const a = rule.action;
-      if (a.type === 'pause') { c.status = 'paused'; K.log(rule.name, c.name, 'Paused'); }
-      else if (a.type === 'activate') { c.status = 'active'; K.log(rule.name, c.name, 'Turned back on'); }
-      else if (a.type === 'notify') { K.log(rule.name, c.name, 'Alert sent'); }
-      else { const b = K.nextBudget(c, a); K.log(rule.name, c.name, `Daily budget ${K.fmt.money(c.budget)} to ${K.fmt.money(b)}`); c.budget = b; }
-    });
+      try {
+        if (a.type === 'pause') { await K.applyStatus(c, 'paused'); K.log(rule.name, c.name, 'Paused'); }
+        else if (a.type === 'activate') { await K.applyStatus(c, 'active'); K.log(rule.name, c.name, 'Turned back on'); }
+        else if (a.type === 'notify') { K.log(rule.name, c.name, 'Alert sent'); }
+        else { const from = c.budget, b = K.nextBudget(c, a); await K.applyBudget(c, b); K.log(rule.name, c.name, `Daily budget ${K.fmt.money(from)} to ${K.fmt.money(b)}`); }
+        changed++;
+      } catch (e) { failed++; K.log(rule.name, c.name, 'Failed: ' + e.message); }
+    }
     rule.runs += 1; rule.lastRun = Date.now();
     K.save();
-    return hits.length;
+    return { changed, failed };
   };
 
   /* ---------- persistence (per browser; the page works without it) ---------- */
-  const KEY = 'kestrel-demo-v1';
+  const key = () => (K.mode === 'meta' ? 'kestrel-meta-' + K.account.id : 'kestrel-demo-v1');
   K.save = function () {
     const o = { rules: K.state.rules, log: K.state.log, range: K.state.range, platform: K.state.platform, c: {} };
-    K.campaigns.forEach((c) => (o.c[c.id] = [c.status, c.budget]));
-    try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
+    if (K.mode === 'sample') K.campaigns.forEach((c) => (o.c[c.id] = [c.status, c.budget]));
+    try { localStorage.setItem(key(), JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
   };
-  K.reset = function () {
-    try { localStorage.removeItem(KEY); } catch (e) { /* storage unavailable */ }
-    init();
-  };
-  function init() {
-    build();
+  /** Rules, log and filters for the current account. A live account starts with every rule off. */
+  K.loadState = function () {
     K.state = { rules: [], log: [], range: 7, platform: 'all' };
     let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(KEY)); } catch (e) { saved = null; }
+    try { saved = JSON.parse(localStorage.getItem(key())); } catch (e) { saved = null; }
     if (saved && Array.isArray(saved.rules)) {
       K.state.rules = saved.rules; K.state.log = saved.log || [];
-      K.state.range = saved.range || 7; K.state.platform = saved.platform || 'all';
-      K.campaigns.forEach((c) => { const s = saved.c && saved.c[c.id]; if (s) { c.status = s[0]; c.budget = s[1]; } });
+      K.state.range = saved.range || 7;
+      if (K.mode === 'sample') {
+        K.state.platform = saved.platform || 'all';
+        K.campaigns.forEach((c) => { const x = saved.c && saved.c[c.id]; if (x) { c.status = x[0]; c.budget = x[1]; } });
+      }
     } else {
-      K.state.rules = K.TEMPLATES.slice(0, 4).map((t, i) => { const r = K.newRule(t); r.id = 'r-default-' + i; r.enabled = i !== 2; return r; });
+      K.state.rules = K.TEMPLATES.slice(0, 4).map((t, i) => { const r = K.newRule(t); r.id = 'r-default-' + i; r.enabled = K.mode === 'sample' && i !== 2; return r; });
     }
-  }
+  };
+  K.useSample = function () { K.mode = 'sample'; K.account = null; K.setCurrency('USD'); build(); K.loadState(); };
+  K.reset = function () {
+    try { localStorage.removeItem(key()); } catch (e) { /* storage unavailable */ }
+    if (K.mode === 'sample') K.useSample(); else K.loadState();
+  };
   /** Size inline rule tokens to their current value, so a rule reads as a sentence. */
   K.fitToks = function (root) {
     (root || document).querySelectorAll('.tok').forEach((el) => {
@@ -248,5 +272,5 @@
       el.style.width = `calc(${(Math.max(3, text.length) * 0.62).toFixed(2)}em + ${el.tagName === 'SELECT' ? 30 : 20}px)`;
     });
   };
-  init();
+  K.useSample();
 })();
