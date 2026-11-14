@@ -249,6 +249,28 @@ and **Cost per result**, which can be used in rules, reports and exports like an
 - Totals that add up different result types (leads plus profile visits) are only a rough
   guide; the Overview says so when that happens.
 
+## Scheduled reports and shareable summaries
+
+Kestrel writes a short plain-text summary of an account: spend, results or revenue, the
+change against the period before, a split by platform, the campaigns doing best and the ones
+that need attention. Accounts with no purchases get results and cost per result instead of
+revenue and ROAS.
+
+- **In the app:** the Reports screen has "Summary to share", for the period and platform
+  chosen at the top, with a Copy button.
+- **From the scheduler:** set the repository variable `KESTREL_REPORT` to `daily` (yesterday's
+  summary, every day) or `weekly` (the last 7 days, every Monday). It is sent to the address
+  in the `KESTREL_WEBHOOK_URL` secret, at or after the hour in `KESTREL_REPORT_HOUR`
+  (0 to 23, UTC; default 6), once per day.
+
+What to know:
+
+- The scheduled report needs a webhook (Slack or Discord). Email is not supported.
+- The time is in UTC, and GitHub can start a scheduled run several minutes late.
+- The summary names campaigns in full. Send it only to a channel that should see them.
+- Campaigns that spent money but have no result or purchase figures are listed separately,
+  not ranked.
+
 ## Alerts and notifications
 
 A rule whose action is "send me an alert" changes nothing. It records which campaigns matched

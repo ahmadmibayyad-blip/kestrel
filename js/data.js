@@ -458,6 +458,58 @@
     try { localStorage.removeItem(key()); } catch (e) { /* storage unavailable */ }
     if (K.mode === 'sample') K.useSample(); else K.loadState();
   };
+  /* ---------- a plain-text performance summary, for sharing or for the scheduled report ---------- */
+  /** `n` days ending yesterday, compared with the `n` days before. `list` defaults to every campaign. */
+  K.report = function (n, list) {
+    const cs = (list || K.campaigns).filter((c) => K.levelOf(c) === 'campaign');
+    const lead = cs.length > 0 && cs.every((c) => c.noSales);   // no purchases anywhere: report results instead
+    const F = K.fmt, M = K.METRICS;
+    const cur = K.sum(cs.map((c) => K.agg(c.days, n))), prev = K.sum(cs.map((c) => K.agg(c.days, n, n)));
+    const change = (k) => {
+      const a = cur[k], b = prev[k];
+      if (!isFinite(a) || !isFinite(b) || !b) return '';
+      const d = ((a - b) / b) * 100;
+      const before = n === 1 ? 'day' : n + ' days';
+      return Math.abs(d) < 0.5 ? ` (level with the ${before} before)` : ` (${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(0)}% vs the ${before} before)`;
+    };
+    const span = n === 1 ? K.dayLabel(DAYS - 1) : `${K.dayLabel(DAYS - n)} to ${K.dayLabel(DAYS - 1)}`;
+    const out = [`${K.account ? K.account.name : 'Sample account'}: ${n === 1 ? 'yesterday' : 'last ' + n + ' days'} (${span})`];
+    if (!cs.length) { out.push('No campaigns to report on.'); return out.join('\n'); }
+    out.push(`Spend: ${F.money(cur.spend)}${change('spend')}`);
+    if (lead) {
+      out.push(`Results: ${F.int(cur.res)}${change('res')}`);
+      out.push(`Cost per result: ${M.cpr.fmt(cur.cpr)}${change('cpr')}`);
+    } else {
+      out.push(`Revenue: ${F.money(cur.revenue)}${change('revenue')}`);
+      out.push(`ROAS: ${F.x(cur.roas)}${change('roas')}`);
+      out.push(`Purchases: ${F.int(cur.conv)} at ${M.cpa.fmt(cur.cpa)} each${change('cpa')}`);
+    }
+    out.push(`Click rate: ${F.pct(cur.ctr)}${change('ctr')}`);
+
+    const platforms = [...new Set(cs.map((c) => c.platform))];
+    if (platforms.length > 1) {
+      out.push('', 'By platform');
+      platforms.forEach((p) => {
+        const m = K.sum(cs.filter((c) => c.platform === p).map((c) => K.agg(c.days, n)));
+        if (m.spend > 0) out.push(`  ${K.PLATFORMS[p].name}: ${F.money(m.spend)} spent, ${lead ? F.int(m.res) + ' results at ' + M.cpr.fmt(m.cpr) + ' each' : 'ROAS ' + F.x(m.roas)}`);
+      });
+    }
+    // Rank campaigns that spent money and whose key number is known.
+    const key = lead ? 'cpr' : 'roas';
+    const ranked = cs.map((c) => ({ c, m: K.agg(c.days, n) }))
+      .filter((x) => x.m.spend > 0 && isFinite(x.m[key]) && x.m[key] > 0 && !(lead ? x.c.noResults : x.c.noSales))
+      .sort((a, b) => (lead ? a.m.cpr - b.m.cpr : b.m.roas - a.m.roas));
+    const line = (x) => `  ${x.c.name}: ${lead ? M.cpr.fmt(x.m.cpr) + ' per result, ' + F.int(x.m.res) + ' ' + (x.c.resultName || 'results').toLowerCase() : 'ROAS ' + F.x(x.m.roas) + ', ' + F.money(x.m.revenue) + ' revenue'} on ${F.money(x.m.spend)}`;
+    if (ranked.length >= 2) {
+      const top = Math.min(3, Math.floor(ranked.length / 2));
+      out.push('', 'Doing best'); ranked.slice(0, top).forEach((x) => out.push(line(x)));
+      out.push('', 'Needs attention'); ranked.slice(-top).reverse().forEach((x) => out.push(line(x)));
+    } else if (ranked.length === 1) { out.push('', 'Campaign'); out.push(line(ranked[0])); }
+    const unknown = cs.filter((c) => K.agg(c.days, n).spend > 0 && (lead ? c.noResults : c.noSales));
+    if (unknown.length) out.push('', `${unknown.length} campaign${unknown.length === 1 ? '' : 's'} spent money without ${lead ? 'result' : 'purchase'} figures from the platform: ${unknown.map((c) => c.name).join(', ')}`);
+    return out.join('\n');
+  };
+
   /** Size inline rule tokens to their current value, so a rule reads as a sentence. */
   K.fitToks = function (root) {
     (root || document).querySelectorAll('.tok').forEach((el) => {

@@ -27,6 +27,9 @@
    Notifications (optional):
      KESTREL_WEBHOOK_URL            Slack or Discord incoming-webhook address. A summary is sent when a
                                     run changes something, raises an alert or fails.
+   Reports (optional, need KESTREL_WEBHOOK_URL):
+     KESTREL_REPORT                 "daily" for yesterday's summary each day, "weekly" for the last 7 days each Monday
+     KESTREL_REPORT_HOUR            hour of the day, UTC, to send it at or after. Default 6.
    Behaviour:
      KESTREL_APPLY         "true" to change the accounts. Anything else is a dry run.
      KESTREL_LOG_NAMES     "true" to print campaign names. Off by default: logs may be public.
@@ -129,7 +132,13 @@ async function run(env, now) {
   const on = Array.isArray(rules) ? rules.filter((r) => r && r.enabled && Array.isArray(r.conditions) && r.action) : [];
   const due = on.filter((r) => runAll || K.isDue(r, state[r.id], now));
   say(`${on.length} rule${on.length === 1 ? ' is' : 's are'} on, ${due.length} due now. Mode: ${apply ? 'APPLY (changes are sent to the ad platforms)' : 'dry run (nothing is changed)'}.`);
-  if (!due.length) return 0;
+  // A scheduled report: once a day (or on Mondays), at or after the chosen hour (UTC), sent to the webhook.
+  const mode = (env.KESTREL_REPORT || '').trim().toLowerCase(), webhook = (env.KESTREL_WEBHOOK_URL || '').trim();
+  const h = parseInt(env.KESTREL_REPORT_HOUR, 10), hour = isFinite(h) ? Math.min(23, Math.max(0, h)) : 6;
+  const at = new Date(now), today = at.toISOString().slice(0, 10);
+  const reportDue = (mode === 'daily' || (mode === 'weekly' && at.getUTCDay() === 1)) && at.getUTCHours() >= hour && state.report !== today && !!webhook;
+  if ((mode === 'daily' || mode === 'weekly') && !webhook) say('KESTREL_REPORT is set, but there is no KESTREL_WEBHOOK_URL to send the report to.');
+  if (!due.length && !reportDue) return 0;
 
   if (hasMeta) await connectMeta(K, env, apply);
   if (hasGoogle) await connectGoogle(K, env, apply);
@@ -178,6 +187,10 @@ async function run(env, now) {
   fs.writeFileSync(stateFile, JSON.stringify(state) + '\n');
   K.liveErrors.forEach((e) => note.push('Could not load ' + e));
   if (note.length) await post(env, [`Kestrel${apply ? '' : ' dry run (nothing was changed)'} on ${K.account.name}`, ...note].join('\n'));
+  if (reportDue) {
+    await post(env, 'Kestrel ' + mode + ' report\n' + K.report(mode === 'weekly' ? 7 : 1));
+    state.report = today; fs.writeFileSync(stateFile, JSON.stringify(state) + '\n');
+  }
   if (failed) { say(`\n${failed} problem${failed === 1 ? '' : 's'} in this run.`); return 1; }
   return 0;
 }

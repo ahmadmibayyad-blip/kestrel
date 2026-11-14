@@ -56,6 +56,8 @@ jobs:
           PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
           PINTEREST_REFRESH_TOKEN: ${{ secrets.PINTEREST_REFRESH_TOKEN }}
           KESTREL_WEBHOOK_URL: ${{ secrets.KESTREL_WEBHOOK_URL }}
+          KESTREL_REPORT: ${{ vars.KESTREL_REPORT }}
+          KESTREL_REPORT_HOUR: ${{ vars.KESTREL_REPORT_HOUR }}
           KESTREL_APPLY: ${{ vars.KESTREL_APPLY }}
           KESTREL_LOG_NAMES: ${{ vars.KESTREL_LOG_NAMES }}
           KESTREL_RUN_ALL: ${{ inputs.run_all }}

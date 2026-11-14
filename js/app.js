@@ -280,6 +280,7 @@
         <label>Chart <select id="rmetric">${opt(keys.map((k) => [k, M[k].label]), ui.rMetric)}</select></label>
         <button class="btn" data-act="csv">Export CSV</button>
       </div>
+      <details class="share"><summary>Summary to share</summary><pre id="summary">${esc(K.report(range(), visible()))}</pre><p><button class="btn sm" data-act="copy-summary">Copy summary</button></p></details>
       <div class="panel"><h2>${m.label} by ${ui.rGroup}</h2><div id="ch-report"></div></div>
       <div class="panel flush"><div class="table-wrap"><table class="data"><thead><tr><th class="left">${ui.rGroup[0].toUpperCase() + ui.rGroup.slice(1)}</th>${keys.map((k) => `<th>${k === 'cpa' ? 'Cost / purchase' : M[k].label}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="left name">${esc(r.label)}</td>${keys.map((k) => `<td>${M[k].fmt(r.m[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
@@ -565,6 +566,12 @@
     }
     else if (act === 'del-rule') { K.state.rules = K.state.rules.filter((x) => x.id !== ui.draft.id); toast(`Deleted "${ui.draft.name}"`); ui.draft = null; K.save(); }
     else if (act === 'csv') return csv();
+    else if (act === 'copy-summary') {
+      const text = K.report(range(), visible());
+      try { await navigator.clipboard.writeText(text); toast('Summary copied'); }
+      catch (err) { const pre = $('#summary'); const sel = window.getSelection(); sel.removeAllRanges(); const rg = document.createRange(); rg.selectNodeContents(pre); sel.addRange(rg); toast('Select all is done for you: press Ctrl+C or Cmd+C to copy'); }
+      return;
+    }
     else if (act === 'undo') {
       const entry = K.state.log.find((e) => String(e.t) === el.dataset.t && e.cid === el.dataset.cid);
       if (!entry) return;

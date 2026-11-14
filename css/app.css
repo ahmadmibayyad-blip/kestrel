@@ -205,3 +205,8 @@ table.c-list td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0
 .cmp { display: block; font-size: 0.8125rem; line-height: 1.6; color: var(--muted); margin: -2px 0 8px; }
 .cmp .tok { font-size: 0.8125rem; font-weight: 500; background: transparent; border-bottom-width: 1px; }
 .cmp-val { display: block; font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+
+/* shareable summary on the Reports screen */
+details.share { margin: 0 0 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 20px; }
+details.share summary { cursor: pointer; font-weight: 600; }
+details.share pre { font: 0.875rem/1.55 var(--body); white-space: pre-wrap; margin: 14px 0; max-width: 80ch; }
