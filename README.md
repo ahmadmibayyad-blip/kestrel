@@ -39,11 +39,48 @@ What to know:
   last 30 days. Purchases and revenue come from the account's purchase events.
 - Budget edits apply to campaigns with a campaign-level daily budget. Campaigns whose
   budgets are set on ad sets are shown but not changed.
-- Rules run when you press Run while the page is open. Running on a schedule needs a server.
+- Rules run when you press Run, or automatically (see below).
 - Tokens from Meta's Graph API Explorer expire after an hour or two. A long-lived or system
   user token lasts longer.
 - Requests use Meta's default API version. Set `K.meta.version` in `js/meta.js` to pin one.
 - Google and TikTok are sample data only.
+
+## Run rules automatically
+
+There are two ways. Both run each enabled rule at its own "check every" interval.
+
+**While the app is open.** On the Automations screen, turn on "Run rules automatically while
+this page is open". It stops when the tab is closed. On a live Meta account it only acts
+when "Allow changes" is on.
+
+**With no browser open (GitHub Actions).** The workflow in
+`.github/workflows/kestrel-rules.yml` runs `automation/run.js` every 15 minutes.
+
+1. In the app, build your rules, then click "Download rules for the scheduler" and commit
+   the file as `automation/rules.json`. Only rules that are switched on will run.
+2. In the repository, go to Settings → Secrets and variables → Actions and add two secrets:
+   `META_ACCESS_TOKEN` and `META_AD_ACCOUNT_ID` (the account number). Use a long-lived or
+   system user token; a short-lived one stops working within hours.
+3. Open the Actions tab, run "Run Kestrel rules" by hand, and read the log. It is a dry run:
+   it prints what each rule would change and changes nothing.
+4. When the dry run looks right, add a repository variable `KESTREL_APPLY` set to `true`.
+   From then on the scheduler pauses campaigns and changes budgets in the live account.
+
+What to know:
+
+- Remove `KESTREL_APPLY` (or set it to anything else) to go back to dry runs. Disable the
+  workflow in the Actions tab to stop it completely.
+- The scheduler uses the rules in the repository, not the ones in your browser. After you
+  edit rules in the app, download and commit `rules.json` again.
+- Logs of a public repository are public. Campaigns are shown by the last four digits of
+  their ID unless you add a variable `KESTREL_LOG_NAMES` set to `true`. Rule names are
+  always shown.
+- GitHub can start scheduled runs several minutes late, and pauses schedules in repositories
+  with no activity for 60 days. A failed run (for example an expired token) shows as a
+  failed workflow, which GitHub emails you about.
+- "Send me an alert" rules only write a line in the log; no message is sent.
+- To run it somewhere else, set the same environment variables and run
+  `node automation/run.js` on any machine with Node 18 or later.
 
 ## Placeholders to replace before this is public
 

@@ -135,6 +135,10 @@
 
   /* ---------- rules ---------- */
   K.OPS = { lt: 'is below', gt: 'is above' };
+  K.FREQ_MIN = { '15 minutes': 15, '30 minutes': 30, hour: 60, '6 hours': 360, day: 1440 };
+  /** When a rule should next run on a schedule, given when it last ran. */
+  K.nextRun = (rule, last) => (last || 0) + (K.FREQ_MIN[rule.freq] || 60) * 60e3;
+  K.isDue = (rule, last, now) => now >= K.nextRun(rule, last) - 60e3; // a minute of slack for late timers
   K.ACTIONS = {
     pause: 'pause the campaign', activate: 'turn the campaign back on',
     inc: 'increase the daily budget', dec: 'decrease the daily budget', notify: 'send me an alert',
@@ -240,18 +244,18 @@
   /* ---------- persistence (per browser; the page works without it) ---------- */
   const key = () => (K.mode === 'meta' ? 'kestrel-meta-' + K.account.id : 'kestrel-demo-v1');
   K.save = function () {
-    const o = { rules: K.state.rules, log: K.state.log, range: K.state.range, platform: K.state.platform, c: {} };
+    const o = { rules: K.state.rules, log: K.state.log, range: K.state.range, platform: K.state.platform, auto: K.state.auto, c: {} };
     if (K.mode === 'sample') K.campaigns.forEach((c) => (o.c[c.id] = [c.status, c.budget]));
     try { localStorage.setItem(key(), JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
   };
   /** Rules, log and filters for the current account. A live account starts with every rule off. */
   K.loadState = function () {
-    K.state = { rules: [], log: [], range: 7, platform: 'all' };
+    K.state = { rules: [], log: [], range: 7, platform: 'all', auto: false };
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(key())); } catch (e) { saved = null; }
     if (saved && Array.isArray(saved.rules)) {
       K.state.rules = saved.rules; K.state.log = saved.log || [];
-      K.state.range = saved.range || 7;
+      K.state.range = saved.range || 7; K.state.auto = !!saved.auto;
       if (K.mode === 'sample') {
         K.state.platform = saved.platform || 'all';
         K.campaigns.forEach((c) => { const x = saved.c && saved.c[c.id]; if (x) { c.status = x[0]; c.budget = x[1]; } });

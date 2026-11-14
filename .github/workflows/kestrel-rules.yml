@@ -1,0 +1,50 @@
+name: Run Kestrel rules
+
+# Runs the rules in automation/rules.json against the Meta ad account every 15 minutes.
+# Dry run until the repository variable KESTREL_APPLY is set to "true".
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      run_all:
+        description: Run every enabled rule now, ignoring its interval
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kestrel-rules
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Restore when each rule last ran
+        uses: actions/cache/restore@v4
+        with:
+          path: automation/.state.json
+          key: kestrel-state-${{ github.run_id }}
+          restore-keys: kestrel-state-
+      - name: Run rules
+        env:
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          KESTREL_APPLY: ${{ vars.KESTREL_APPLY }}
+          KESTREL_LOG_NAMES: ${{ vars.KESTREL_LOG_NAMES }}
+          KESTREL_RUN_ALL: ${{ inputs.run_all }}
+        run: node automation/run.js
+      - name: Remember when each rule last ran
+        if: always() && hashFiles('automation/.state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: automation/.state.json
+          key: kestrel-state-${{ github.run_id }}

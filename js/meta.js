@@ -41,6 +41,7 @@
     if (!res.ok) throw new Error('Meta returned an error (' + res.status + ').');
     return j;
   }
+  M.api = api;
   async function all(path, params) {
     let out = [], j = await api(path, params);
     for (let n = 0; n < 60; n++) {

@@ -20,6 +20,10 @@
     if (s < 86400) return Math.floor(s / 3600) + ' h ago';
     return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
+  function until(t) {
+    const m = Math.round((t - Date.now()) / 60e3);
+    return m <= 1 ? 'within a minute' : m < 90 ? `in ${m} min` : `in ${Math.round(m / 60)} h`;
+  }
   let toastTimer;
   function toast(msg) {
     const el = $('#toast'); el.textContent = msg; el.hidden = false;
@@ -167,6 +171,14 @@
       <div class="toolbar">
         <select id="tpl" aria-label="Start from a template"><option value="">New rule from template…</option>${K.TEMPLATES.map((t, i) => `<option value="${i}">${esc(t.name)}</option>`).join('')}</select>
         <button class="btn ghost" data-act="run-all">Run all rules now</button>
+        <button class="btn ghost" data-act="export-rules">Download rules for the scheduler</button>
+      </div>
+      <div class="auto ${K.state.auto ? 'on' : ''}">
+        <button class="switch" role="switch" aria-checked="${K.state.auto}" data-act="toggle-auto" aria-label="Run rules automatically while this page is open"></button>
+        <span><b>Run rules automatically while this page is open.</b> ${!K.state.auto ? 'Each rule that is on runs at its own "check every" interval.'
+          : live() && !K.meta.allowChanges ? 'Paused: this Meta account is read-only. Allow changes on the Connection screen to let rules act.'
+          : 'On. Rules run at their own interval as long as this tab stays open.'}
+          To run them with no browser open, use the scheduler described in the README.</span>
       </div>
       <div class="rules-layout">
         <ul class="rule-list">${K.state.rules.map((r) => {
@@ -175,7 +187,7 @@
             <button class="switch" role="switch" aria-checked="${r.enabled}" data-act="toggle-rule" data-id="${r.id}" aria-label="${esc(r.name)} is ${r.enabled ? 'on' : 'off'}"></button>
             <button class="rule-body" data-act="edit-rule" data-id="${r.id}">
               <strong>${esc(r.name)}</strong><span class="rule-text">${esc(K.ruleText(r))}</span>
-              <span class="rule-meta">${r.enabled ? (hits ? `<b class="match">${hits} match now</b>` : 'No matches now') : 'Off'} <span>Last run: ${ago(r.lastRun)}</span></span>
+              <span class="rule-meta">${r.enabled ? (hits ? `<b class="match">${hits} match now</b>` : 'No matches now') : 'Off'} <span>Last run: ${ago(r.lastRun)}</span>${r.enabled && K.state.auto ? `<span>Next run: ${until(K.nextRun(r, r.lastRun))}</span>` : ''}</span>
             </button></li>`;
         }).join('') || '<li class="empty">No rules yet. Start one from a template above.</li>'}</ul>
         <div id="editor">${editorHtml()}</div>
@@ -394,6 +406,19 @@
     }
     else if (act === 'del-rule') { K.state.rules = K.state.rules.filter((x) => x.id !== ui.draft.id); toast(`Deleted "${ui.draft.name}"`); ui.draft = null; K.save(); }
     else if (act === 'csv') return csv();
+    else if (act === 'toggle-auto') {
+      if (!K.state.auto && live() && !window.confirm('Run rules automatically while this page is open?\n\nRules that are on will change your live Meta ad account without asking each time.')) return;
+      K.state.auto = !K.state.auto; K.save();
+      toast(K.state.auto ? 'Automatic runs are on' : 'Automatic runs are off');
+      if (K.state.auto) autoTick();
+    }
+    else if (act === 'export-rules') {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(K.state.rules, null, 2) + '\n'], { type: 'application/json' }));
+      a.download = 'rules.json'; a.click(); URL.revokeObjectURL(a.href);
+      toast('Downloaded rules.json');
+      return;
+    }
     else if (act === 'reset') { K.reset(); ui.draft = null; ui.sel.clear(); toast(live() ? 'Rules and log cleared' : 'Demo data reset'); }
     else if (act === 'find-accounts') {
       const token = ui.conn.token.trim();
@@ -446,9 +471,24 @@
     else if (t.id === 'token') { ui.conn.token = t.value; }
     else if (t.dataset.d && ui.draft && t.tagName === 'INPUT') { setPath(ui.draft, t.dataset.d, t.value); $('#preview').innerHTML = previewHtml(ui.draft); K.fitToks(main); }
   });
+  /* Automatic runs: every minute, run each enabled rule whose interval has passed. */
+  let ticking = false;
+  async function autoTick() {
+    if (ticking || !K.state.auto || !K.canWrite() || ui.conn.busy) return;
+    ticking = true;
+    try {
+      const total = { changed: 0, failed: 0 }; let ran = 0;
+      for (const r of K.state.rules.filter((x) => x.enabled && K.isDue(x, x.lastRun, Date.now()))) {
+        const x = await K.run(r); total.changed += x.changed; total.failed += x.failed; ran++;
+      }
+      if (total.changed || total.failed) { toast(summary('Automatic run', total)); render(); }
+      else if (ran && view() === 'automations' && !ui.draft) render();
+    } finally { ticking = false; }
+  }
+  setInterval(autoTick, 60e3);
   window.addEventListener('hashchange', render);
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (['overview', 'reports'].includes(view())) render(); }, 150); });
   // Reopen the last Meta connection if there is one; otherwise show the sample account.
-  if (K.meta.restore()) loadLive(() => K.meta.load(), `Reading ${K.meta.conn.account.name} from Meta…`);
-  else render();
+  if (K.meta.restore()) loadLive(() => K.meta.load(), `Reading ${K.meta.conn.account.name} from Meta…`).then(autoTick);
+  else { render(); autoTick(); }
 })();
