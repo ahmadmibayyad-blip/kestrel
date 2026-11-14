@@ -128,6 +128,30 @@ What to know:
   field altered. Kestrel reads the current campaign first and changes only status or budget.
 - The Creatives screen lists Snapchat ads by name, without previews.
 
+## Connect a real Pinterest Ads account
+
+The Connection screen can also read a Pinterest Ads account (`js/pinterest.js`), alongside the
+other platforms.
+
+1. In Pinterest Developers, create an app and ask for the ads scopes: `ads:read`, plus
+   `ads:write` if Kestrel should pause campaigns or change budgets. Pinterest reviews new apps.
+2. Generate an access token for your account from the app's page.
+3. Set up the relay in [`relay/`](relay/README.md) and copy its address. The same relay serves
+   TikTok and Pinterest.
+4. In the app, go to Connection, enter the token and the relay address, find your ad
+   accounts, pick one and connect.
+
+What to know:
+
+- Pinterest's API refuses requests sent from a web page, so the app reaches it through the
+  relay. The scheduler below runs outside the browser and calls Pinterest directly.
+- Access tokens last 30 days. Optionally add the app ID, app secret and a refresh token and
+  Kestrel renews the sign-in by itself.
+- Purchases and revenue for Pinterest campaigns are checkout events from your Pinterest tag.
+- Budget edits apply to campaigns with a campaign daily spend cap. Lifetime budgets and
+  budgets set on ad groups are shown but not changed.
+- The Creatives screen lists Pinterest ads by name or Pin number, without previews.
+
 ## Run rules automatically
 
 There are two ways. Both run each enabled rule at its own "check every" interval.
@@ -154,6 +178,9 @@ when "Allow changes" is on.
    - TikTok Ads: `TIKTOK_ACCESS_TOKEN` and `TIKTOK_ADVERTISER_ID`.
    - Snapchat Ads: `SNAPCHAT_CLIENT_ID`, `SNAPCHAT_CLIENT_SECRET`, `SNAPCHAT_REFRESH_TOKEN` and
      `SNAPCHAT_AD_ACCOUNT_ID`.
+   - Pinterest Ads: `PINTEREST_ACCESS_TOKEN` and `PINTEREST_AD_ACCOUNT_ID`. The token lasts 30 days;
+     replace the secret before it expires. To renew it automatically, add `PINTEREST_APP_ID`,
+     `PINTEREST_APP_SECRET` and `PINTEREST_REFRESH_TOKEN` as well.
 3. Open the Actions tab, run "Run Kestrel rules" by hand, and read the log. It is a dry run:
    it prints what each rule would change and changes nothing.
 4. When the dry run looks right, add a repository variable `KESTREL_APPLY` set to `true`.

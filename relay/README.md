@@ -1,10 +1,12 @@
-# Kestrel TikTok relay
+# Kestrel relay
 
-TikTok's Marketing API refuses requests that come from a web page, so the Kestrel app cannot
-call it from the browser. This relay is a small server that passes the app's requests on to
-TikTok. Meta and Google Ads do not need it, and neither does the scheduler in `automation/`.
+The TikTok and Pinterest ad APIs refuse requests that come from a web page, so the Kestrel app
+cannot call them from the browser. This relay is a small server that passes the app's requests
+on to them. Meta, Google Ads and Snapchat do not need it, and neither does the scheduler in
+`automation/`.
 
-It forwards only to TikTok's Marketing API, stores nothing and logs no tokens.
+It forwards only to those two APIs, stores nothing and logs no tokens. One relay serves both
+platforms: use the same address in the TikTok and Pinterest panels.
 
 ## Host it on Apify
 
@@ -15,21 +17,24 @@ It forwards only to TikTok's Marketing API, stores nothing and logs no tokens.
 3. Build the Actor. In its Settings, check that the Server section shows the server
    interface as enabled (the Actor's `actor.json` turns it on).
 4. Copy the Actor's server URL from its Server tab. It looks like
-   `https://<your-username>--kestrel-tiktok-relay.apify.actor`.
+   `https://<your-username>--kestrel-relay.apify.actor`.
 5. In Apify Console → Settings → API & Integrations, create an API token.
 6. In Kestrel's Connection screen, paste the relay address with the token added, like this:
-   `https://<your-username>--kestrel-tiktok-relay.apify.actor?token=<your Apify token>`
+   `https://<your-username>--kestrel-relay.apify.actor?token=<your Apify token>`
 
 What to know:
 
 - The relay address contains your Apify token, so treat it like a password. Kestrel keeps
-  it in your browser with the TikTok connection.
+  it in your browser with each connection that uses it.
+- Your TikTok and Pinterest tokens pass through the relay on their way to those platforms.
+  Host your own; do not point Kestrel at a relay someone else runs.
 - Apify starts the relay when a request arrives and stops it after it has been idle, so the
   first request after a pause takes a few seconds. Running time counts against your Apify
   usage.
 - To allow only your own pages to use the relay, add an environment variable
   `KESTREL_ALLOWED_ORIGINS` to the Actor, for example
   `https://ahmadmibayyad-blip.github.io,http://localhost:8000`.
+- After the relay code changes in the repository, rebuild the Actor to pick it up.
 
 ## Run it yourself
 

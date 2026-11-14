@@ -15,6 +15,7 @@
   ui.goog = { devToken: '', customerId: '', loginId: '', clientId: '', accessToken: '' };
   ui.tik = { token: '', advertiserId: '', relay: '' };
   ui.snap = { clientId: '', clientSecret: '', refreshToken: '', accessToken: '', accounts: null, token: null };
+  ui.pin = { accessToken: '', relay: '', clientId: '', clientSecret: '', refreshToken: '', accounts: null, token: null };
 
   function ago(t) {
     if (!t) return 'never';
@@ -368,9 +369,35 @@
       <p class="hint">These details stay in this browser and are sent only to Snapchat. Clicks for Snapchat campaigns are swipe-ups, and "purchases" are purchase events from your Snap Pixel. Kestrel starts read-only.</p>
     </div>`;
   }
+  function pinterestPanel() {
+    const s = K.pinterest, f = ui.pin;
+    const field = (key, label, extra) => `<label class="field"><span>${label}</span><input ${extra || 'type="text"'} data-ui="pin.${key}" autocomplete="off" spellcheck="false" value="${esc(f[key])}"></label>`;
+    if (s.conn) return `<div class="panel"><h2>Pinterest Ads: connected to ${esc(s.conn.account.name)}</h2>
+      <p class="muted">Ad account ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}.${s.conn.refreshToken ? '' : ' Pinterest access tokens last 30 days; connect again when this one expires.'}</p>${allowRow(s)}
+      <p><button class="btn ghost danger" data-act="disconnect" data-src="pinterest">Disconnect Pinterest Ads</button></p></div>`;
+    return `<div class="panel"><h2>Connect a Pinterest Ads account</h2>
+      <ol class="how">
+        <li>In Pinterest Developers, create an app and ask for access to the ads scopes (<b>ads:read</b>, and <b>ads:write</b> if Kestrel should make changes). Pinterest reviews new apps.</li>
+        <li>Generate an <b>access token</b> for your account from the app's page.</li>
+        <li>Set up the relay described in relay/README.md and copy its address.</li>
+        <li>Fill in the token and the relay address and find your ad accounts.</li>
+      </ol>
+      ${field('accessToken', 'Access token', 'type="password"')}
+      ${field('relay', 'Relay address. Pinterest does not accept requests from web pages, so the app needs one (the same relay as TikTok works)', 'type="password" placeholder="https://…apify.actor?token=…"')}
+      <details class="alt"><summary>Renew the sign-in automatically with a refresh token</summary>
+        ${field('clientId', 'App ID')}${field('clientSecret', 'App secret', 'type="password"')}${field('refreshToken', 'Refresh token', 'type="password"')}</details>
+      ${f.accounts ? (f.accounts.length ? `
+        <label class="field"><span>Ad account</span><select id="p-acct">${f.accounts.map((x, i) => `<option value="${i}">${esc(x.name)} (${esc(x.id)}, ${esc(x.currency)})</option>`).join('')}</select></label>
+        <label class="check"><input type="checkbox" id="p-remember" ${ui.conn.remember ? 'checked' : ''}> Remember this connection on this device</label>
+        <p><button class="btn primary" data-act="p-connect">Connect this account</button> <button class="btn ghost" data-act="p-find">Look again</button></p>`
+        : `<p class="empty">This token cannot see any ad accounts. Check it was created by someone with access to the account.</p><p><button class="btn" data-act="p-find">Look again</button></p>`)
+        : `<p><button class="btn primary" data-act="p-find">Find my ad accounts</button></p>`}
+      <p class="hint">These details stay in this browser and are sent only to your relay, which passes them to Pinterest. "Purchases" for Pinterest campaigns are checkout events from your Pinterest tag. Kestrel starts read-only.</p>
+    </div>`;
+  }
   function connection() {
     const cn = ui.conn, list = K.connected();
-    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta, Google Ads, TikTok Ads and Snapchat Ads.</p></header>`;
+    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta, Google Ads, TikTok Ads, Snapchat Ads and Pinterest Ads.</p></header>`;
     if (cn.busy) { main.innerHTML = head + `<div class="panel"><p class="empty">${esc(cn.busy)}</p></div>`; return; }
     const problems = [cn.error].concat(K.liveErrors || []).filter(Boolean);
     const currencies = [...new Set(list.map((s) => s.conn.account.currency))];
@@ -381,7 +408,7 @@
         ${currencies.length > 1 ? `<p class="warn">These accounts use different currencies (${esc(currencies.join(', '))}). Amounts are not converted, so totals across platforms are not reliable. Filter by platform to read them correctly.</p>` : ''}
         <p><button class="btn" data-act="refresh">Load the latest data</button></p>
         <p class="hint">Rules run when you press Run, automatically while this page is open, or unattended with the scheduler described in the README.</p></div>` : ''}
-      ${metaPanel()}${googlePanel()}${tiktokPanel()}${snapchatPanel()}`;
+      ${metaPanel()}${googlePanel()}${tiktokPanel()}${snapchatPanel()}${pinterestPanel()}`;
   }
 
   /* ---------- shell ---------- */
@@ -552,6 +579,26 @@
       if (K.snapchat.conn) { ui.snap = { clientId: '', clientSecret: '', refreshToken: '', accessToken: '', accounts: null, token: null }; toast(`Connected to ${account.name}`); }
       return;
     }
+    else if (act === 'p-find') {
+      const f = ui.pin, t = (k) => f[k].trim();
+      if (!t('accessToken') && !(t('clientId') && t('clientSecret') && t('refreshToken'))) { toast('Enter the Pinterest access token first'); return; }
+      if (!t('relay')) { toast('Enter the relay address. Pinterest does not accept requests straight from a web page.'); return; }
+      if (!/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(t('relay'))) { toast('The relay address should start with https://'); return; }
+      ui.conn.busy = 'Looking for your Pinterest ad accounts…'; ui.conn.error = ''; render();
+      try {
+        const found = await K.pinterest.accounts({ accessToken: t('accessToken'), clientId: t('clientId'), clientSecret: t('clientSecret'), refreshToken: t('refreshToken'), relay: t('relay') });
+        f.accounts = found.accounts; f.token = found.token;
+      } catch (err) { ui.conn.error = err.message; f.accounts = null; }
+      ui.conn.busy = '';
+    }
+    else if (act === 'p-connect') {
+      const f = ui.pin, account = f.accounts[+$('#p-acct').value], remember = $('#p-remember').checked;
+      ui.conn.remember = remember;
+      const token = Object.assign({ clientId: f.clientId.trim(), clientSecret: f.clientSecret.trim(), relay: f.relay.trim() }, f.token);
+      await loadLive(() => K.pinterest.connect(token, account, remember), `Reading ${account.name} from Pinterest…`);
+      if (K.pinterest.conn) { ui.pin = { accessToken: '', relay: '', clientId: '', clientSecret: '', refreshToken: '', accounts: null, token: null }; toast(`Connected to ${account.name}`); }
+      return;
+    }
     else if (act === 'g-renew') {
       K.google.renew(await K.google.signIn(K.google.conn.clientId));
       await loadLive(() => K.loadLive(), 'Loading the latest data…');
@@ -621,6 +668,6 @@
   window.addEventListener('hashchange', render);
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (['overview', 'reports'].includes(view())) render(); }, 150); });
   // Reopen the last Meta connection if there is one; otherwise show the sample account.
-  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore(), K.snapchat.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
+  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore(), K.snapchat.restore(), K.pinterest.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
   else { render(); autoTick(); }
 })();

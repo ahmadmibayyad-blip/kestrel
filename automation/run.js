@@ -1,4 +1,4 @@
-/* Runs Kestrel rules against Meta, Google Ads, TikTok Ads and Snapchat Ads accounts with no browser open.
+/* Runs Kestrel rules against Meta, Google Ads, TikTok Ads, Snapchat Ads and Pinterest Ads accounts with no browser open.
    Meant for the scheduled GitHub Actions workflow, but works anywhere Node 18+ runs.
 
    Meta (optional):
@@ -11,6 +11,11 @@
      GOOGLE_ADS_CLIENT_ID           OAuth client ID
      GOOGLE_ADS_CLIENT_SECRET       OAuth client secret
      GOOGLE_ADS_REFRESH_TOKEN       refresh token with the adwords scope
+   Pinterest Ads (optional):
+     PINTEREST_ACCESS_TOKEN         access token with ads:read, plus ads:write to apply changes
+     PINTEREST_AD_ACCOUNT_ID        the ad account ID
+     PINTEREST_APP_ID, PINTEREST_APP_SECRET, PINTEREST_REFRESH_TOKEN
+                                    optional, to renew the access token instead of supplying one
    Snapchat Ads (optional):
      SNAPCHAT_CLIENT_ID             OAuth app client ID
      SNAPCHAT_CLIENT_SECRET         OAuth app client secret
@@ -38,6 +43,7 @@ function loadEngine() {
   require('../js/google.js');
   require('../js/tiktok.js');
   require('../js/snapchat.js');
+  require('../js/pinterest.js');
   return global.K;
 }
 const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; } };
@@ -89,6 +95,18 @@ async function connectSnapchat(K, env, apply) {
   return true;
 }
 
+async function connectPinterest(K, env, apply) {
+  const accessToken = (env.PINTEREST_ACCESS_TOKEN || '').trim(), refreshToken = (env.PINTEREST_REFRESH_TOKEN || '').trim();
+  const clientId = (env.PINTEREST_APP_ID || '').trim(), clientSecret = (env.PINTEREST_APP_SECRET || '').trim(), id = digits(env.PINTEREST_AD_ACCOUNT_ID);
+  if (!id || (!accessToken && !refreshToken)) return false;
+  if (!accessToken && !(clientId && clientSecret)) throw new Error('Pinterest needs PINTEREST_APP_ID and PINTEREST_APP_SECRET to use a refresh token.');
+  const conn = { accessToken, expires: 0, clientId, clientSecret, refreshToken: clientId && clientSecret ? refreshToken : '', allow: apply, account: { id, name: 'Pinterest', currency: 'USD' } };
+  const a = await K.pinterest.call('GET', 'ad_accounts/' + id, null, conn);
+  conn.account = { id, name: a.name || 'Pinterest', currency: a.currency && a.currency !== 'UNK' ? a.currency : 'USD' };
+  K.pinterest.conn = conn;
+  return true;
+}
+
 async function main(env, now) {
   const say = (s) => console.log(s);
   const dir = __dirname;
@@ -98,11 +116,12 @@ async function main(env, now) {
   const apply = env.KESTREL_APPLY === 'true', names = env.KESTREL_LOG_NAMES === 'true', runAll = env.KESTREL_RUN_ALL === 'true';
 
   const K = loadEngine();
-  K.meta.conn = null; K.google.conn = null; K.tiktok.conn = null; K.snapchat.conn = null;
+  K.meta.conn = null; K.google.conn = null; K.tiktok.conn = null; K.snapchat.conn = null; K.pinterest.conn = null;
   const hasMeta = !!(env.META_ACCESS_TOKEN && env.META_AD_ACCOUNT_ID), hasGoogle = !!(env.GOOGLE_ADS_DEVELOPER_TOKEN && env.GOOGLE_ADS_CUSTOMER_ID);
   const hasTikTok = !!(env.TIKTOK_ACCESS_TOKEN && env.TIKTOK_ADVERTISER_ID);
   const hasSnapchat = !!(env.SNAPCHAT_REFRESH_TOKEN && env.SNAPCHAT_AD_ACCOUNT_ID);
-  if (!hasMeta && !hasGoogle && !hasTikTok && !hasSnapchat) { say('Not set up yet: add the Meta, Google Ads, TikTok Ads or Snapchat Ads secrets described in the README. Nothing was run.'); return 0; }
+  const hasPinterest = !!(env.PINTEREST_AD_ACCOUNT_ID && (env.PINTEREST_ACCESS_TOKEN || env.PINTEREST_REFRESH_TOKEN));
+  if (!hasMeta && !hasGoogle && !hasTikTok && !hasSnapchat && !hasPinterest) { say('Not set up yet: add the secrets for at least one ad platform, as described in the README. Nothing was run.'); return 0; }
 
   const on = Array.isArray(rules) ? rules.filter((r) => r && r.enabled && Array.isArray(r.conditions) && r.action) : [];
   const due = on.filter((r) => runAll || K.isDue(r, state[r.id], now));
@@ -113,6 +132,7 @@ async function main(env, now) {
   if (hasGoogle) await connectGoogle(K, env, apply);
   if (hasTikTok) await connectTikTok(K, env, apply);
   if (hasSnapchat) await connectSnapchat(K, env, apply);
+  if (hasPinterest) await connectPinterest(K, env, apply);
   await K.loadLive();
   say(`Loaded ${K.campaigns.length} campaigns from ${K.account.name}.`);
   let failed = K.liveErrors.length;

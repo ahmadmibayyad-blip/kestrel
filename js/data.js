@@ -17,6 +17,7 @@
     google: { name: 'Google', color: 'var(--s2)' },
     tiktok: { name: 'TikTok', color: 'var(--s3)' },
     snapchat: { name: 'Snapchat', color: 'var(--s4)' },
+    pinterest: { name: 'Pinterest', color: 'var(--s5)' },
   };
 
   let money, money2, symbol = '$';
