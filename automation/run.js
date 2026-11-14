@@ -1,4 +1,4 @@
-/* Runs Kestrel rules against Meta and Google Ads accounts with no browser open.
+/* Runs Kestrel rules against Meta, Google Ads and TikTok Ads accounts with no browser open.
    Meant for the scheduled GitHub Actions workflow, but works anywhere Node 18+ runs.
 
    Meta (optional):
@@ -11,6 +11,9 @@
      GOOGLE_ADS_CLIENT_ID           OAuth client ID
      GOOGLE_ADS_CLIENT_SECRET       OAuth client secret
      GOOGLE_ADS_REFRESH_TOKEN       refresh token with the adwords scope
+   TikTok Ads (optional):
+     TIKTOK_ACCESS_TOKEN            access token with Ads Management and Reporting permissions
+     TIKTOK_ADVERTISER_ID           the advertiser ID
    Behaviour:
      KESTREL_APPLY         "true" to change the accounts. Anything else is a dry run.
      KESTREL_LOG_NAMES     "true" to print campaign names. Off by default: logs may be public.
@@ -28,6 +31,7 @@ function loadEngine() {
   require('../js/data.js');
   require('../js/meta.js');
   require('../js/google.js');
+  require('../js/tiktok.js');
   return global.K;
 }
 const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; } };
@@ -57,6 +61,15 @@ async function connectGoogle(K, env, apply) {
   return true;
 }
 
+async function connectTikTok(K, env, apply) {
+  const token = (env.TIKTOK_ACCESS_TOKEN || '').trim(), advertiserId = digits(env.TIKTOK_ADVERTISER_ID);
+  if (!token || !advertiserId) return false;
+  const conn = { token, advertiserId, allow: apply };
+  conn.account = await K.tiktok.lookup(conn);
+  K.tiktok.conn = conn;
+  return true;
+}
+
 async function main(env, now) {
   const say = (s) => console.log(s);
   const dir = __dirname;
@@ -66,9 +79,10 @@ async function main(env, now) {
   const apply = env.KESTREL_APPLY === 'true', names = env.KESTREL_LOG_NAMES === 'true', runAll = env.KESTREL_RUN_ALL === 'true';
 
   const K = loadEngine();
-  K.meta.conn = null; K.google.conn = null;
+  K.meta.conn = null; K.google.conn = null; K.tiktok.conn = null;
   const hasMeta = !!(env.META_ACCESS_TOKEN && env.META_AD_ACCOUNT_ID), hasGoogle = !!(env.GOOGLE_ADS_DEVELOPER_TOKEN && env.GOOGLE_ADS_CUSTOMER_ID);
-  if (!hasMeta && !hasGoogle) { say('Not set up yet: add the Meta or Google Ads secrets described in the README. Nothing was run.'); return 0; }
+  const hasTikTok = !!(env.TIKTOK_ACCESS_TOKEN && env.TIKTOK_ADVERTISER_ID);
+  if (!hasMeta && !hasGoogle && !hasTikTok) { say('Not set up yet: add the Meta, Google Ads or TikTok Ads secrets described in the README. Nothing was run.'); return 0; }
 
   const on = Array.isArray(rules) ? rules.filter((r) => r && r.enabled && Array.isArray(r.conditions) && r.action) : [];
   const due = on.filter((r) => runAll || K.isDue(r, state[r.id], now));
@@ -77,6 +91,7 @@ async function main(env, now) {
 
   if (hasMeta) await connectMeta(K, env, apply);
   if (hasGoogle) await connectGoogle(K, env, apply);
+  if (hasTikTok) await connectTikTok(K, env, apply);
   await K.loadLive();
   say(`Loaded ${K.campaigns.length} campaigns from ${K.account.name}.`);
   let failed = K.liveErrors.length;

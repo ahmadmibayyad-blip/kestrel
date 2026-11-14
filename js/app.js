@@ -13,6 +13,7 @@
   ui.conn = { error: '', busy: '', remember: false };
   ui.meta = { token: '', accounts: null };
   ui.goog = { devToken: '', customerId: '', loginId: '', clientId: '', accessToken: '' };
+  ui.tik = { token: '', advertiserId: '' };
 
   function ago(t) {
     if (!t) return 'never';
@@ -320,9 +321,27 @@
       <p class="hint">These details stay in this browser and are sent only to Google. "Purchases" and revenue for Google campaigns are the account's conversions and conversion value. Kestrel starts read-only.</p>
     </div>`;
   }
+  function tiktokPanel() {
+    const s = K.tiktok, t = ui.tik;
+    if (s.conn) return `<div class="panel"><h2>TikTok Ads: connected to ${esc(s.conn.account.name)}</h2>
+      <p class="muted">Advertiser ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}.</p>${s.note ? `<p class="warn">${esc(s.note)}</p>` : ''}${allowRow(s)}
+      <p><button class="btn ghost danger" data-act="disconnect" data-src="tiktok">Disconnect TikTok Ads</button></p></div>`;
+    return `<div class="panel"><h2>Connect a TikTok Ads account</h2>
+      <ol class="how">
+        <li>In TikTok for Business Developers, create an app and request the Ads Management and Reporting permissions. TikTok reviews new apps before they can be used.</li>
+        <li>Authorise the app for your ad account and copy the <b>access token</b> it gives you.</li>
+        <li>Paste the token and the advertiser ID here.</li>
+      </ol>
+      <label class="field"><span>Access token</span><input type="password" data-ui="tik.token" autocomplete="off" spellcheck="false" value="${esc(t.token)}"></label>
+      <label class="field"><span>Advertiser ID</span><input type="text" data-ui="tik.advertiserId" autocomplete="off" spellcheck="false" value="${esc(t.advertiserId)}"></label>
+      <label class="check"><input type="checkbox" id="t-remember" ${ui.conn.remember ? 'checked' : ''}> Remember this connection on this device</label>
+      <p><button class="btn primary" data-act="t-connect">Connect TikTok Ads</button></p>
+      <p class="hint">The token stays in this browser and is sent only to business-api.tiktok.com. "Purchases" for TikTok campaigns are complete-payment events from your TikTok pixel. Kestrel starts read-only.</p>
+    </div>`;
+  }
   function connection() {
     const cn = ui.conn, list = K.connected();
-    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta and Google Ads.</p></header>`;
+    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta, Google Ads and TikTok Ads.</p></header>`;
     if (cn.busy) { main.innerHTML = head + `<div class="panel"><p class="empty">${esc(cn.busy)}</p></div>`; return; }
     const problems = [cn.error].concat(K.liveErrors || []).filter(Boolean);
     const currencies = [...new Set(list.map((s) => s.conn.account.currency))];
@@ -333,7 +352,7 @@
         ${currencies.length > 1 ? `<p class="warn">These accounts use different currencies (${esc(currencies.join(', '))}). Amounts are not converted, so totals across platforms are not reliable. Filter by platform to read them correctly.</p>` : ''}
         <p><button class="btn" data-act="refresh">Load the latest data</button></p>
         <p class="hint">Rules run when you press Run, automatically while this page is open, or unattended with the scheduler described in the README.</p></div>` : ''}
-      ${metaPanel()}${googlePanel()}`;
+      ${metaPanel()}${googlePanel()}${tiktokPanel()}`;
   }
 
   /* ---------- shell ---------- */
@@ -477,6 +496,14 @@
       if (K.google.conn) { ui.goog = { devToken: '', customerId: '', loginId: '', clientId: '', accessToken: '' }; toast(`Connected to ${K.google.conn.account.name}`); }
       return;
     }
+    else if (act === 't-connect') {
+      const t = ui.tik, remember = $('#t-remember').checked;
+      if (!t.token.trim() || !t.advertiserId.replace(/\D/g, '')) { toast('Enter the access token and the advertiser ID first'); return; }
+      ui.conn.remember = remember;
+      await loadLive(() => K.tiktok.connect(t.token, t.advertiserId, remember), 'Reading your TikTok Ads account…');
+      if (K.tiktok.conn) { ui.tik = { token: '', advertiserId: '' }; toast(`Connected to ${K.tiktok.conn.account.name}`); }
+      return;
+    }
     else if (act === 'g-renew') {
       K.google.renew(await K.google.signIn(K.google.conn.clientId));
       await loadLive(() => K.loadLive(), 'Loading the latest data…');
@@ -546,6 +573,6 @@
   window.addEventListener('hashchange', render);
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (['overview', 'reports'].includes(view())) render(); }, 150); });
   // Reopen the last Meta connection if there is one; otherwise show the sample account.
-  if ([K.meta.restore(), K.google.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
+  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
   else { render(); autoTick(); }
 })();

@@ -43,7 +43,6 @@ What to know:
 - Tokens from Meta's Graph API Explorer expire after an hour or two. A long-lived or system
   user token lasts longer.
 - Requests use Meta's default API version. Set `K.meta.version` in `js/meta.js` to pin one.
-- TikTok is sample data only.
 
 ## Connect a real Google Ads account
 
@@ -77,6 +76,29 @@ What to know:
   officially supported setup. Requests use API version `v26` (`K.google.version` in
   `js/google.js`); Google retires versions about a year after release.
 
+## Connect a real TikTok Ads account
+
+The Connection screen can also read a TikTok Ads account (`js/tiktok.js`). It can be connected
+alongside Meta and Google Ads.
+
+1. In TikTok for Business Developers, create an app and request the Ads Management and
+   Reporting permissions. TikTok reviews new apps before they can be used.
+2. Authorise the app for your ad account and copy the access token it gives you.
+3. In the app, go to Connection, paste the token and the advertiser ID, and connect.
+
+What to know:
+
+- It is not confirmed that TikTok accepts requests from a web page. If it does not, the
+  Connection screen says it could not reach TikTok from the browser. The scheduler below runs
+  outside the browser and is not affected, so TikTok rules can still run there.
+- "Purchases" and revenue for TikTok campaigns are complete-payment events from your TikTok
+  pixel. If TikTok returns no purchase figures, those columns are empty and rules based on
+  purchases, revenue, ROAS or cost per purchase skip TikTok campaigns instead of treating
+  them as zero.
+- Budget edits apply to campaigns with a daily campaign budget. Campaigns with a lifetime
+  budget, or budgets set on ad groups, are shown but not changed.
+- The Creatives screen lists TikTok ads by name, without previews.
+
 ## Run rules automatically
 
 There are two ways. Both run each enabled rule at its own "check every" interval.
@@ -100,6 +122,7 @@ when "Allow changes" is on.
      token must be issued for the same OAuth client with the `adwords` scope (Google's
      OAuth Playground can create one). Refresh tokens of an app left in "Testing" on the
      consent screen expire after 7 days.
+   - TikTok Ads: `TIKTOK_ACCESS_TOKEN` and `TIKTOK_ADVERTISER_ID`.
 3. Open the Actions tab, run "Run Kestrel rules" by hand, and read the log. It is a dry run:
    it prints what each rule would change and changes nothing.
 4. When the dry run looks right, add a repository variable `KESTREL_APPLY` set to `true`.

@@ -195,6 +195,8 @@
       .map((c) => {
         const values = rule.conditions.map((cd) => {
           const v = K.agg(c.days, cd.window)[cd.metric];
+          // A campaign whose platform returned no purchase data never matches a purchase-based condition.
+          if (c.noSales && ['roas', 'revenue', 'cpa', 'conv'].includes(cd.metric)) return { v: NaN, hit: false };
           return { v, hit: cd.op === 'lt' ? v < cd.value : v > cd.value };
         });
         const hit = rule.match === 'any' ? values.some((x) => x.hit) : values.every((x) => x.hit);
