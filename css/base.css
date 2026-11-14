@@ -1,0 +1,63 @@
+/* Shared tokens and primitives for the Kestrel site and app. */
+:root {
+  --ink: #171a2e;
+  --paper: #f1f3f8;
+  --panel: #ffffff;
+  --line: #dce0ea;
+  --muted: #5b617c;
+  --cobalt: #2b46d9;
+  --cobalt-deep: #1d2f9c;
+  --amber: #f0a22e;
+  --amber-wash: #fff3dc;
+  --good: #0b7a45;
+  --bad: #c0362c;
+  /* chart series: fixed order, colour follows the platform */
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --display: 'Bricolage Grotesque', 'Trebuchet MS', system-ui, sans-serif;
+  --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --r-sm: 6px;
+  --r-lg: 14px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.5 var(--body); }
+h1, h2, h3 { font-family: var(--display); line-height: 1.1; margin: 0; letter-spacing: -0.01em; }
+p { margin: 0 0 1em; }
+a { color: var(--cobalt); text-underline-offset: 3px; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; border-radius: 4px; }
+.muted { color: var(--muted); }
+.small { font-size: 0.875rem; }
+.nowrap { white-space: nowrap; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--panel); padding: 8px 12px; z-index: 50; }
+.skip:focus { left: 8px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: var(--r-sm);
+  border: 1.5px solid var(--ink); background: var(--panel); color: var(--ink); font-weight: 600;
+  text-decoration: none; cursor: pointer; line-height: 1.2;
+}
+.btn:hover { background: var(--ink); color: #fff; }
+.btn.primary { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+.btn.primary:hover { background: var(--cobalt-deep); border-color: var(--cobalt-deep); }
+.btn.ghost { border-color: var(--line); background: transparent; }
+.btn.ghost:hover { background: var(--panel); color: var(--ink); border-color: var(--ink); }
+.btn.danger { color: var(--bad); }
+.btn.sm { padding: 5px 10px; font-size: 0.875rem; }
+
+/* The rule sentence: editable values sit inline, underlined in amber. */
+.tok {
+  appearance: none; -webkit-appearance: none; border: 0; border-bottom: 2px solid var(--amber); border-radius: 4px 4px 0 0;
+  background: var(--amber-wash); padding: 1px 6px; font-weight: 600; cursor: pointer; max-width: 100%;
+}
+select.tok { padding-right: 20px; background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%), linear-gradient(135deg, var(--ink) 50%, transparent 50%); background-position: calc(100% - 10px) 55%, calc(100% - 6px) 55%; background-size: 4px 4px; background-repeat: no-repeat; }
+.tok.num { width: 5.2em; cursor: text; -moz-appearance: textfield; }
+.tok.num::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+.pdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; flex: none; vertical-align: middle; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.8125rem; color: var(--muted); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

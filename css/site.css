@@ -1,0 +1,86 @@
+/* Kestrel landing page. */
+body.site { background: var(--paper); }
+.site-head, main, .site-foot { max-width: 1120px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+.site-head { display: flex; align-items: center; gap: 24px; padding-top: 18px; padding-bottom: 18px; }
+.brand { display: flex; align-items: center; gap: 8px; font: 700 1.375rem var(--display); color: var(--ink); text-decoration: none; }
+.brand svg { color: var(--cobalt); }
+.site-head nav { display: flex; gap: 22px; margin-left: auto; }
+.site-head nav a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.site-head nav a:hover { text-decoration: underline; }
+
+.hero { padding: 56px 0 72px; }
+.hero h1 { font-size: clamp(2.5rem, 6.4vw, 5rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1; max-width: 16ch; }
+.lede { font-size: 1.25rem; max-width: 52ch; margin: 24px 0; color: var(--muted); }
+.cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 48px; }
+
+/* the signature: a rule you can edit, running on real rows */
+.demo { background: var(--panel); border: 1.5px solid var(--ink); border-radius: var(--r-lg); padding: 28px; box-shadow: 8px 8px 0 var(--ink); }
+.demo-sentence { font: 500 clamp(1.25rem, 2.6vw, 1.875rem)/1.9 var(--display); margin-bottom: 20px; }
+.demo .table-wrap { overflow-x: auto; }
+.demo table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.demo th, .demo td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.demo th { font-size: 0.8125rem; font-weight: 500; color: var(--muted); }
+.demo .left { text-align: left; }
+.demo td.left:first-child { white-space: normal; min-width: 190px; font-weight: 500; }
+.demo tr td:last-child { color: var(--muted); }
+.demo tr.hit td { background: var(--amber-wash); }
+.demo tr.hit td:last-child { color: var(--ink); font-weight: 600; }
+.demo tr.hit .val { font-weight: 700; }
+.demo tr.hit td:first-child { box-shadow: inset 4px 0 0 var(--amber); }
+.demo-result { margin: 18px 0 0; font-size: 1.0625rem; }
+
+.band { padding: 64px 0; border-top: 1px solid var(--line); }
+.band > h2 { font-size: clamp(1.75rem, 3.6vw, 2.75rem); letter-spacing: -0.02em; max-width: 22ch; margin-bottom: 32px; }
+.section-lede { max-width: 60ch; font-size: 1.125rem; color: var(--muted); margin: -16px 0 32px; }
+
+.features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; margin: 0; }
+.features > div { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 16px; padding: 20px 0; border-top: 1px solid var(--line); }
+.features dt { font: 700 1.125rem var(--display); }
+.features dd { margin: 0; color: var(--muted); }
+
+.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
+.steps li { counter-increment: step; border-top: 3px solid var(--ink); padding-top: 16px; }
+.steps li::before { content: counter(step); font: 700 2.5rem/1 var(--display); color: var(--cobalt); display: block; margin-bottom: 12px; }
+.steps h3 { font-size: 1.25rem; margin-bottom: 8px; }
+.steps p { color: var(--muted); margin: 0; }
+
+.compare { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 20px; align-items: stretch; }
+.compare article { padding: 24px; border: 1px solid var(--line); border-radius: var(--r-lg); }
+.compare h3 { font-size: 1.25rem; margin-bottom: 10px; }
+.compare p { margin: 0; color: var(--muted); }
+.compare .us { background: var(--ink); border-color: var(--ink); color: #fff; }
+.compare .us p { color: #d5d9ea; }
+.compare .us h3 { color: var(--amber); }
+
+.pricing { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.pricing article { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; display: flex; flex-direction: column; }
+.pricing .featured { border: 1.5px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+.pricing h3 { font-size: 1.125rem; }
+.price { font: 700 2.75rem/1.1 var(--display); margin: 12px 0 4px; }
+.price span { font: 400 1rem var(--body); color: var(--muted); }
+.pricing ul { padding-left: 18px; margin: 8px 0 24px; color: var(--muted); }
+.pricing .btn { margin-top: auto; align-self: flex-start; }
+
+.faq details { border-top: 1px solid var(--line); padding: 16px 0; max-width: 70ch; }
+.faq summary { font: 700 1.125rem var(--display); cursor: pointer; }
+.faq details p { margin: 10px 0 0; color: var(--muted); }
+
+.site-foot { border-top: 3px solid var(--ink); padding-top: 48px; padding-bottom: 48px; }
+.foot-line { font: 700 clamp(1.75rem, 4vw, 3rem)/1.1 var(--display); letter-spacing: -0.02em; margin-bottom: 20px; }
+.site-foot .small { color: var(--muted); margin: 32px 0 0; }
+
+@media (max-width: 860px) {
+  .site-head nav { display: none; }
+  .site-head .btn { margin-left: auto; }
+  .features, .steps, .compare, .pricing { grid-template-columns: minmax(0, 1fr); }
+  .features > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .hero { padding: 32px 0 48px; }
+  .demo { padding: 18px; box-shadow: 5px 5px 0 var(--ink); }
+  .band { padding: 44px 0; }
+}
+@media (max-width: 600px) {
+  .demo th:nth-child(2), .demo td:nth-child(2) { display: none; }
+  .demo td.left:first-child { min-width: 120px; }
+  .demo th, .demo td { padding: 8px 6px; font-size: 0.875rem; }
+}
+@media (max-width: 480px) { .site-head, main, .site-foot { padding-left: 16px; padding-right: 16px; } }

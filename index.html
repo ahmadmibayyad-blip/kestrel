@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kestrel: ad automation rules you can read</title>
+<meta name="description" content="Kestrel pauses losing campaigns, scales winners and logs every change across Meta, Google and TikTok, using rules written as plain sentences.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body class="site">
+<a class="skip" href="#top">Skip to content</a>
+<header class="site-head">
+  <a class="brand" href="index.html"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M2 9l10-5 10 5-7 2-3 9-3-9z" fill="currentColor"/></svg>Kestrel</a>
+  <nav aria-label="Page">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#compare">Compare</a>
+    <a href="#pricing">Pricing</a>
+  </nav>
+  <a class="btn primary" href="app.html">Open the demo</a>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <h1>Write the rule once.<br>Kestrel watches every campaign.</h1>
+    <p class="lede">Pause what loses money, scale what earns it, and keep a record of every change across Meta, Google and TikTok.</p>
+    <p class="cta-row"><a class="btn primary" href="app.html">Open the demo</a> <a class="btn ghost" href="#how">See how it works</a></p>
+
+    <div class="demo" aria-label="Try a rule on sample campaigns">
+      <p class="demo-sentence">When
+        <select class="tok" id="d-metric" aria-label="Metric"><option value="roas">ROAS</option><option value="cpa">cost per purchase</option><option value="ctr">CTR</option></select>
+        <select class="tok" id="d-op" aria-label="Comparison"><option value="lt">is below</option><option value="gt">is above</option></select>
+        <input class="tok num" id="d-value" type="number" step="any" min="0" value="1.5" aria-label="Value">
+        over the last
+        <select class="tok" id="d-window" aria-label="Time window"><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option></select>,
+        <select class="tok" id="d-action" aria-label="Action"><option value="pause">pause the campaign</option><option value="dec">cut its budget by 20%</option><option value="inc">raise its budget by 20%</option></select>.
+      </p>
+      <div class="table-wrap"><table id="d-table"></table></div>
+      <p class="demo-result" id="d-result" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <section id="features" class="band">
+    <h2>What it does while you are not looking</h2>
+    <dl class="features">
+      <div><dt>Automation rules</dt><dd>Combine any metrics and time windows. Pause, restart, raise or cut budgets, or just send an alert. Set a ceiling so a budget never runs away.</dd></div>
+      <div><dt>Preview before it runs</dt><dd>Every rule shows the campaigns it would change right now, with the numbers that triggered it. No surprises on Monday morning.</dd></div>
+      <div><dt>Bulk edits</dt><dd>Select twenty campaigns and change them in one move. Budgets, status, all from one table.</dd></div>
+      <div><dt>Creative analytics</dt><dd>See which ads earn their spend and which are wearing out, flagged when click rate starts to slide.</dd></div>
+      <div><dt>Reports</dt><dd>Break results down by platform, campaign or day. Export the table as a CSV in one click.</dd></div>
+      <div><dt>Change log</dt><dd>Every pause and budget change, with the rule or person that made it. Easy to audit, easy to undo.</dd></div>
+    </dl>
+  </section>
+
+  <section id="how" class="band">
+    <h2>From connected to automated in an afternoon</h2>
+    <ol class="steps">
+      <li><h3>Connect your ad accounts</h3><p>Link Meta, Google and TikTok. Kestrel reads your campaigns and the last 60 days of results.</p></li>
+      <li><h3>Write rules, or start from a template</h3><p>Stop losing campaigns, scale winners, catch tired creative. Adjust the numbers to match your margins.</p></li>
+      <li><h3>Let it run, then read the log</h3><p>Rules check as often as every 15 minutes. Each change is logged with the rule that made it.</p></li>
+    </ol>
+  </section>
+
+  <section id="compare" class="band">
+    <h2>Where Kestrel sits</h2>
+    <p class="section-lede">Ad automation tools tend to take one of two approaches. Kestrel keeps the control of the first and removes most of the upkeep.</p>
+    <div class="compare">
+      <article><h3>Rule builders</h3><p>You decide exactly what happens and when. The cost is time: complex rule trees are slow to build and hard to read six months later.</p></article>
+      <article><h3>AI optimizer suites</h3><p>Fast to start, and they act on patterns you would miss. The cost is visibility: it can be hard to tell why a budget moved.</p></article>
+      <article class="us"><h3>Kestrel</h3><p>Rules written as sentences anyone on the team can read, a preview of what will change before it does, and a log of everything after.</p></article>
+    </div>
+  </section>
+
+  <section id="pricing" class="band">
+    <h2>Priced by ad spend, every feature included</h2>
+    <div class="pricing">
+      <article><h3>Starter</h3><p class="price">$49<span> per month</span></p><p>Up to $10k monthly ad spend</p><ul><li>Unlimited rules</li><li>3 ad accounts</li><li>Checks every 30 minutes</li></ul><a class="btn" href="app.html">Open the demo</a></article>
+      <article class="featured"><h3>Growth</h3><p class="price">$149<span> per month</span></p><p>Up to $50k monthly ad spend</p><ul><li>Unlimited rules</li><li>15 ad accounts</li><li>Checks every 15 minutes</li></ul><a class="btn primary" href="app.html">Open the demo</a></article>
+      <article><h3>Agency</h3><p class="price">$399<span> per month</span></p><p>Up to $250k monthly ad spend</p><ul><li>Unlimited rules</li><li>Unlimited ad accounts</li><li>Client workspaces</li></ul><a class="btn" href="app.html">Open the demo</a></article>
+    </div>
+  </section>
+
+  <section class="band faq">
+    <h2>Questions</h2>
+    <details><summary>Will a rule ever change something I did not expect?</summary><p>Each rule shows the campaigns it matches before you turn it on, and budget rules take a ceiling or a floor. Everything a rule does is written to the change log.</p></details>
+    <details><summary>How often do rules run?</summary><p>You choose per rule, from every 15 minutes to once a day.</p></details>
+    <details><summary>Is the demo using real data?</summary><p>No. The demo account is sample data generated in your browser. Nothing in it touches a real ad account.</p></details>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <p class="foot-line">See it work on a sample account.</p>
+  <a class="btn primary" href="app.html">Open the demo</a>
+  <p class="small">Meta, Google and TikTok are trademarks of their owners. Kestrel is not affiliated with them.</p>
+</footer>
+<script src="js/data.js"></script>
+<script src="js/site.js"></script>
+</body>
+</html>
