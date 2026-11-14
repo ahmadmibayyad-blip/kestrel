@@ -101,6 +101,33 @@ What to know:
   budget, or budgets set on ad groups, are shown but not changed.
 - The Creatives screen lists TikTok ads by name, without previews.
 
+## Connect a real Snapchat Ads account
+
+The Connection screen can also read a Snapchat Ads account from the browser
+(`js/snapchat.js`), alongside the other platforms. Snapchat's API accepts requests from web
+pages, so no relay is needed.
+
+1. In Snapchat Ads Manager, open Business Details and create an OAuth app. Add a redirect
+   address and note the client ID and client secret.
+2. Authorise the app with the `snapchat-marketing-api` scope and exchange the code it returns
+   for a refresh token (Snapchat's Marketing API documentation walks through the two requests).
+3. In the app, go to Connection, enter the client ID, client secret and refresh token, find
+   your ad accounts, pick one and connect.
+
+What to know:
+
+- Snapchat access tokens last an hour. With the three values above, Kestrel renews the
+  sign-in by itself. You can paste a one-hour access token instead, but it will stop working.
+- The client secret and refresh token are kept in the browser with the connection, for the
+  tab or on the device if "remember" is ticked.
+- Clicks for Snapchat campaigns are swipe-ups. Purchases and revenue are purchase events from
+  your Snap Pixel.
+- Budget edits apply to campaigns with a campaign daily budget (Snapchat's minimum is 20 in
+  the account's currency). Budgets set on ad sets are shown but not changed.
+- Changing a Snapchat campaign means sending the whole campaign back to Snapchat with one
+  field altered. Kestrel reads the current campaign first and changes only status or budget.
+- The Creatives screen lists Snapchat ads by name, without previews.
+
 ## Run rules automatically
 
 There are two ways. Both run each enabled rule at its own "check every" interval.
@@ -125,6 +152,8 @@ when "Allow changes" is on.
      OAuth Playground can create one). Refresh tokens of an app left in "Testing" on the
      consent screen expire after 7 days.
    - TikTok Ads: `TIKTOK_ACCESS_TOKEN` and `TIKTOK_ADVERTISER_ID`.
+   - Snapchat Ads: `SNAPCHAT_CLIENT_ID`, `SNAPCHAT_CLIENT_SECRET`, `SNAPCHAT_REFRESH_TOKEN` and
+     `SNAPCHAT_AD_ACCOUNT_ID`.
 3. Open the Actions tab, run "Run Kestrel rules" by hand, and read the log. It is a dry run:
    it prints what each rule would change and changes nothing.
 4. When the dry run looks right, add a repository variable `KESTREL_APPLY` set to `true`.

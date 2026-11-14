@@ -1,4 +1,4 @@
-/* Runs Kestrel rules against Meta, Google Ads and TikTok Ads accounts with no browser open.
+/* Runs Kestrel rules against Meta, Google Ads, TikTok Ads and Snapchat Ads accounts with no browser open.
    Meant for the scheduled GitHub Actions workflow, but works anywhere Node 18+ runs.
 
    Meta (optional):
@@ -11,6 +11,11 @@
      GOOGLE_ADS_CLIENT_ID           OAuth client ID
      GOOGLE_ADS_CLIENT_SECRET       OAuth client secret
      GOOGLE_ADS_REFRESH_TOKEN       refresh token with the adwords scope
+   Snapchat Ads (optional):
+     SNAPCHAT_CLIENT_ID             OAuth app client ID
+     SNAPCHAT_CLIENT_SECRET         OAuth app client secret
+     SNAPCHAT_REFRESH_TOKEN         refresh token with the snapchat-marketing-api scope
+     SNAPCHAT_AD_ACCOUNT_ID         the ad account ID
    TikTok Ads (optional):
      TIKTOK_ACCESS_TOKEN            access token with Ads Management and Reporting permissions
      TIKTOK_ADVERTISER_ID           the advertiser ID
@@ -32,6 +37,7 @@ function loadEngine() {
   require('../js/meta.js');
   require('../js/google.js');
   require('../js/tiktok.js');
+  require('../js/snapchat.js');
   return global.K;
 }
 const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; } };
@@ -70,6 +76,19 @@ async function connectTikTok(K, env, apply) {
   return true;
 }
 
+async function connectSnapchat(K, env, apply) {
+  const clientId = (env.SNAPCHAT_CLIENT_ID || '').trim(), clientSecret = (env.SNAPCHAT_CLIENT_SECRET || '').trim();
+  const refreshToken = (env.SNAPCHAT_REFRESH_TOKEN || '').trim(), id = (env.SNAPCHAT_AD_ACCOUNT_ID || '').trim();
+  if (!refreshToken || !id) return false;
+  if (!clientId || !clientSecret) throw new Error('Snapchat needs SNAPCHAT_CLIENT_ID and SNAPCHAT_CLIENT_SECRET as well.');
+  const conn = { accessToken: '', expires: 0, clientId, clientSecret, refreshToken, allow: apply, account: { id, name: 'Snapchat', currency: 'USD' } };
+  const info = await K.snapchat.call('GET', 'adaccounts/' + id, null, conn);
+  const a = ((info.adaccounts || [])[0] || {}).adaccount || {};
+  conn.account = { id, name: a.name || 'Snapchat', currency: a.currency || 'USD' };
+  K.snapchat.conn = conn;
+  return true;
+}
+
 async function main(env, now) {
   const say = (s) => console.log(s);
   const dir = __dirname;
@@ -79,10 +98,11 @@ async function main(env, now) {
   const apply = env.KESTREL_APPLY === 'true', names = env.KESTREL_LOG_NAMES === 'true', runAll = env.KESTREL_RUN_ALL === 'true';
 
   const K = loadEngine();
-  K.meta.conn = null; K.google.conn = null; K.tiktok.conn = null;
+  K.meta.conn = null; K.google.conn = null; K.tiktok.conn = null; K.snapchat.conn = null;
   const hasMeta = !!(env.META_ACCESS_TOKEN && env.META_AD_ACCOUNT_ID), hasGoogle = !!(env.GOOGLE_ADS_DEVELOPER_TOKEN && env.GOOGLE_ADS_CUSTOMER_ID);
   const hasTikTok = !!(env.TIKTOK_ACCESS_TOKEN && env.TIKTOK_ADVERTISER_ID);
-  if (!hasMeta && !hasGoogle && !hasTikTok) { say('Not set up yet: add the Meta, Google Ads or TikTok Ads secrets described in the README. Nothing was run.'); return 0; }
+  const hasSnapchat = !!(env.SNAPCHAT_REFRESH_TOKEN && env.SNAPCHAT_AD_ACCOUNT_ID);
+  if (!hasMeta && !hasGoogle && !hasTikTok && !hasSnapchat) { say('Not set up yet: add the Meta, Google Ads, TikTok Ads or Snapchat Ads secrets described in the README. Nothing was run.'); return 0; }
 
   const on = Array.isArray(rules) ? rules.filter((r) => r && r.enabled && Array.isArray(r.conditions) && r.action) : [];
   const due = on.filter((r) => runAll || K.isDue(r, state[r.id], now));
@@ -92,6 +112,7 @@ async function main(env, now) {
   if (hasMeta) await connectMeta(K, env, apply);
   if (hasGoogle) await connectGoogle(K, env, apply);
   if (hasTikTok) await connectTikTok(K, env, apply);
+  if (hasSnapchat) await connectSnapchat(K, env, apply);
   await K.loadLive();
   say(`Loaded ${K.campaigns.length} campaigns from ${K.account.name}.`);
   let failed = K.liveErrors.length;

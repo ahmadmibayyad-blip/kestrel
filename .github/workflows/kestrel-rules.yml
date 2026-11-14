@@ -46,6 +46,10 @@ jobs:
           GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
           TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
           TIKTOK_ADVERTISER_ID: ${{ secrets.TIKTOK_ADVERTISER_ID }}
+          SNAPCHAT_CLIENT_ID: ${{ secrets.SNAPCHAT_CLIENT_ID }}
+          SNAPCHAT_CLIENT_SECRET: ${{ secrets.SNAPCHAT_CLIENT_SECRET }}
+          SNAPCHAT_REFRESH_TOKEN: ${{ secrets.SNAPCHAT_REFRESH_TOKEN }}
+          SNAPCHAT_AD_ACCOUNT_ID: ${{ secrets.SNAPCHAT_AD_ACCOUNT_ID }}
           KESTREL_APPLY: ${{ vars.KESTREL_APPLY }}
           KESTREL_LOG_NAMES: ${{ vars.KESTREL_LOG_NAMES }}
           KESTREL_RUN_ALL: ${{ inputs.run_all }}

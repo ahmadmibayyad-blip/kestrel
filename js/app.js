@@ -14,6 +14,7 @@
   ui.meta = { token: '', accounts: null };
   ui.goog = { devToken: '', customerId: '', loginId: '', clientId: '', accessToken: '' };
   ui.tik = { token: '', advertiserId: '', relay: '' };
+  ui.snap = { clientId: '', clientSecret: '', refreshToken: '', accessToken: '', accounts: null, token: null };
 
   function ago(t) {
     if (!t) return 'never';
@@ -341,9 +342,35 @@
       <p class="hint">The token stays in this browser and is sent only to your relay, which passes it to TikTok. "Purchases" for TikTok campaigns are complete-payment events from your TikTok pixel. Kestrel starts read-only.</p>
     </div>`;
   }
+  function snapchatPanel() {
+    const s = K.snapchat, f = ui.snap;
+    const field = (key, label, extra) => `<label class="field"><span>${label}</span><input ${extra || 'type="text"'} data-ui="snap.${key}" autocomplete="off" spellcheck="false" value="${esc(f[key])}"></label>`;
+    if (s.conn) return `<div class="panel"><h2>Snapchat Ads: connected to ${esc(s.conn.account.name)}</h2>
+      <p class="muted">Ad account ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}.${s.conn.refreshToken ? '' : ' This access token lasts about an hour; connect again when it expires.'}</p>${allowRow(s)}
+      <p><button class="btn ghost danger" data-act="disconnect" data-src="snapchat">Disconnect Snapchat Ads</button></p></div>`;
+    return `<div class="panel"><h2>Connect a Snapchat Ads account</h2>
+      <ol class="how">
+        <li>In Snapchat Ads Manager, open Business Details and create an OAuth app. Note its <b>client ID</b> and <b>client secret</b>.</li>
+        <li>Authorise the app with the <b>snapchat-marketing-api</b> scope and exchange the code for a <b>refresh token</b>.</li>
+        <li>Fill in the three values and find your ad accounts.</li>
+      </ol>
+      ${field('clientId', 'Client ID')}
+      ${field('clientSecret', 'Client secret', 'type="password"')}
+      ${field('refreshToken', 'Refresh token', 'type="password"')}
+      <details class="alt"><summary>Use a one-hour access token instead</summary>
+        ${field('accessToken', 'Access token', 'type="password"')}</details>
+      ${f.accounts ? (f.accounts.length ? `
+        <label class="field"><span>Ad account</span><select id="s-acct">${f.accounts.map((x, i) => `<option value="${i}">${esc(x.name)} (${esc(x.currency)})${x.active ? '' : ', not active'}</option>`).join('')}</select></label>
+        <label class="check"><input type="checkbox" id="s-remember" ${ui.conn.remember ? 'checked' : ''}> Remember this connection on this device</label>
+        <p><button class="btn primary" data-act="s-connect">Connect this account</button> <button class="btn ghost" data-act="s-find">Look again</button></p>`
+        : `<p class="empty">This sign-in cannot see any ad accounts. Check it was authorised by someone with access to the account.</p><p><button class="btn" data-act="s-find">Look again</button></p>`)
+        : `<p><button class="btn primary" data-act="s-find">Find my ad accounts</button></p>`}
+      <p class="hint">These details stay in this browser and are sent only to Snapchat. Clicks for Snapchat campaigns are swipe-ups, and "purchases" are purchase events from your Snap Pixel. Kestrel starts read-only.</p>
+    </div>`;
+  }
   function connection() {
     const cn = ui.conn, list = K.connected();
-    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta, Google Ads and TikTok Ads.</p></header>`;
+    const head = `<header class="view-head"><h1>Connection</h1><p class="muted">Use the sample account, or read your own campaigns from Meta, Google Ads, TikTok Ads and Snapchat Ads.</p></header>`;
     if (cn.busy) { main.innerHTML = head + `<div class="panel"><p class="empty">${esc(cn.busy)}</p></div>`; return; }
     const problems = [cn.error].concat(K.liveErrors || []).filter(Boolean);
     const currencies = [...new Set(list.map((s) => s.conn.account.currency))];
@@ -354,7 +381,7 @@
         ${currencies.length > 1 ? `<p class="warn">These accounts use different currencies (${esc(currencies.join(', '))}). Amounts are not converted, so totals across platforms are not reliable. Filter by platform to read them correctly.</p>` : ''}
         <p><button class="btn" data-act="refresh">Load the latest data</button></p>
         <p class="hint">Rules run when you press Run, automatically while this page is open, or unattended with the scheduler described in the README.</p></div>` : ''}
-      ${metaPanel()}${googlePanel()}${tiktokPanel()}`;
+      ${metaPanel()}${googlePanel()}${tiktokPanel()}${snapchatPanel()}`;
   }
 
   /* ---------- shell ---------- */
@@ -507,6 +534,24 @@
       if (K.tiktok.conn) { ui.tik = { token: '', advertiserId: '', relay: '' }; toast(`Connected to ${K.tiktok.conn.account.name}`); }
       return;
     }
+    else if (act === 's-find') {
+      const f = ui.snap, t = (k) => f[k].trim();
+      if (!t('accessToken') && !(t('clientId') && t('clientSecret') && t('refreshToken'))) { toast('Enter the client ID, client secret and refresh token first'); return; }
+      ui.conn.busy = 'Looking for your Snapchat ad accounts…'; ui.conn.error = ''; render();
+      try {
+        const found = await K.snapchat.accounts({ accessToken: t('accessToken'), clientId: t('clientId'), clientSecret: t('clientSecret'), refreshToken: t('refreshToken') });
+        f.accounts = found.accounts; f.token = found.token;
+      } catch (err) { ui.conn.error = err.message; f.accounts = null; }
+      ui.conn.busy = '';
+    }
+    else if (act === 's-connect') {
+      const f = ui.snap, account = f.accounts[+$('#s-acct').value], remember = $('#s-remember').checked;
+      ui.conn.remember = remember;
+      const token = Object.assign({ clientId: f.clientId.trim(), clientSecret: f.clientSecret.trim() }, f.token);
+      await loadLive(() => K.snapchat.connect(token, account, remember), `Reading ${account.name} from Snapchat…`);
+      if (K.snapchat.conn) { ui.snap = { clientId: '', clientSecret: '', refreshToken: '', accessToken: '', accounts: null, token: null }; toast(`Connected to ${account.name}`); }
+      return;
+    }
     else if (act === 'g-renew') {
       K.google.renew(await K.google.signIn(K.google.conn.clientId));
       await loadLive(() => K.loadLive(), 'Loading the latest data…');
@@ -576,6 +621,6 @@
   window.addEventListener('hashchange', render);
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (['overview', 'reports'].includes(view())) render(); }, 150); });
   // Reopen the last Meta connection if there is one; otherwise show the sample account.
-  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
+  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore(), K.snapchat.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
   else { render(); autoTick(); }
 })();

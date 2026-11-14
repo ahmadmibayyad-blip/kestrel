@@ -16,6 +16,7 @@
     meta: { name: 'Meta', color: 'var(--s1)' },
     google: { name: 'Google', color: 'var(--s2)' },
     tiktok: { name: 'TikTok', color: 'var(--s3)' },
+    snapchat: { name: 'Snapchat', color: 'var(--s4)' },
   };
 
   let money, money2, symbol = '$';
