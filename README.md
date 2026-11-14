@@ -152,6 +152,31 @@ What to know:
   budgets set on ad groups are shown but not changed.
 - The Creatives screen lists Pinterest ads by name or Pin number, without previews.
 
+## Campaigns, ad sets and ads
+
+Kestrel works at three levels, because on Meta most budgets and most pause decisions sit
+below the campaign.
+
+- The **Campaigns** screen has three tabs: Campaigns, Ad sets and Ads. Each lists its items
+  with the same switches, budget editing and bulk changes. Ads have no budget of their own.
+- A **rule** says what it looks at: "On all platforms campaigns / ad sets / ads, when…". A
+  campaign can look fine overall while one ad set inside it loses money; an ad-set rule
+  catches that and a campaign rule does not.
+- Budget actions are offered for campaigns and ad sets. Rules on ads can pause, restart or
+  alert.
+- Undo, the activity log, alerts and the scheduler all work at every level. Log entries name
+  the ad set or ad and the campaign it belongs to.
+
+What to know:
+
+- Ad sets and ads are loaded for **Meta** accounts. Google Ads, TikTok, Snapchat and
+  Pinterest are campaign-level for now, so an ad-set or ad rule finds nothing on them.
+- Ads carry 30 days of daily results (campaigns and ad sets carry 60), which covers every
+  time window a rule can use.
+- If Meta refuses the ad-set or ad requests, campaigns still load and those tabs are empty.
+- Pausing a campaign also stops its ad sets and ads from delivering, but Kestrel shows each
+  item's own switch, as Ads Manager does. An ad set can be "on" inside a paused campaign.
+
 ## Create ads in bulk (Meta)
 
 The Create ads screen makes many Meta ads in one go. You give it several images, texts and

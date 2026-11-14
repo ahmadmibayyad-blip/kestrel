@@ -87,13 +87,17 @@
     // "Results" is Meta's own count of whatever each campaign is set up to get (leads, messages,
     // purchases, profile visits). It is asked for separately so that, if it is unavailable, the
     // rest still loads and results fall back to purchases.
-    const [camps, rows, ads, adRows, resRows, adResRows] = await Promise.all([
+    // Ad sets and ads are optional extras: if any of their requests fails, campaigns still load.
+    const [camps, rows, ads, adRows, resRows, adResRows, sets, setRows, setResRows] = await Promise.all([
       all(act + '/campaigns', { fields: 'id,name,status,daily_budget,lifetime_budget,objective', effective_status: status, limit: 200 }),
       insights('campaign', since, 'campaign_id,' + metrics),
-      all(act + '/ads', { fields: 'id,name,campaign_id,creative{thumbnail_url,object_type}', effective_status: status, limit: 200 }).catch(() => []),
+      all(act + '/ads', { fields: 'id,name,status,campaign_id,adset_id,creative{thumbnail_url,object_type}', effective_status: status, limit: 200 }).catch(() => []),
       insights('ad', K.isoDay(-30), 'ad_id,' + metrics).catch(() => []),
       insights('campaign', since, 'campaign_id,results').catch(() => null),
       insights('ad', K.isoDay(-30), 'ad_id,results').catch(() => null),
+      all(act + '/adsets', { fields: 'id,name,status,campaign_id,daily_budget,lifetime_budget', effective_status: status, limit: 200 }).catch(() => []),
+      insights('adset', since, 'adset_id,' + metrics).catch(() => []),
+      insights('adset', since, 'adset_id,results').catch(() => null),
     ]);
     const f = factor();
     const byId = {};
@@ -126,11 +130,24 @@
       const c = byId[a.campaign_id]; if (!c) return;
       const type = (a.creative && a.creative.object_type) || '';
       adById[a.id] = { id: a.id, name: a.name, campaign: c, format: type === 'VIDEO' ? 'Video' : type === 'PHOTO' ? 'Image' : 'Ad',
-        hue: (k * 47) % 360, thumb: (a.creative && a.creative.thumbnail_url) || '', days: K.blankDays(), spent: 0 };
+        hue: (k * 47) % 360, thumb: (a.creative && a.creative.thumbnail_url) || '', days: K.blankDays(), spent: 0,
+        level: 'ad', parent: c, platform: 'meta', status: a.status === 'ACTIVE' ? 'active' : 'paused', budget: 0, noBudget: true, budgetNote: 'Ads have no budget', resultName: c.resultName };
     });
     adRows.forEach((r) => { const a = adById[r.ad_id]; if (a) { K.fillDay(a.days, r.date_start, until, withRes(adRes, r.ad_id, r)); a.spent += parseFloat(r.spend) || 0; } });
+    const setById = {}, setRes = index(setResRows, 'adset_id');
+    sets.forEach((a) => {
+      const c = byId[a.campaign_id]; if (!c) return;
+      const has = a.daily_budget != null && a.daily_budget !== '';
+      setById[a.id] = { id: a.id, name: a.name, level: 'adset', parent: c, platform: 'meta', status: a.status === 'ACTIVE' ? 'active' : 'paused',
+        budget: has ? Math.round(parseFloat(a.daily_budget) / f) : 0, noBudget: !has, budgetNote: a.lifetime_budget ? 'Lifetime budget' : 'Set on the campaign',
+        resultName: c.resultName, days: K.blankDays(), spent: 0 };
+    });
+    setRows.forEach((r) => { const a = setById[r.adset_id]; if (a) { K.fillDay(a.days, r.date_start, until, withRes(setRes, r.adset_id, r)); a.spent += parseFloat(r.spend) || 0; } });
+    const kept = (e) => e.status === 'active' || e.spent > 0;
     return {
-      campaigns: Object.values(byId).filter((c) => c.status === 'active' || c.spent > 0),
+      campaigns: Object.values(byId).filter(kept),
+      adsets: Object.values(setById).filter(kept),
+      ads: Object.values(adById).filter(kept),   // ads carry 30 days of results, enough for every rule window
       creatives: Object.values(adById).filter((a) => a.spent > 0),
     };
   };

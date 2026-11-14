@@ -144,8 +144,8 @@ async function run(env, now) {
 
   // The run log may be public, so it hides campaign names unless asked. The notification goes
   // to a private webhook, so it always uses them.
-  const label = (c) => `${K.sources[c.platform].label} ` + (names ? `"${c.name}"` : 'campaign …' + String(c.id).slice(-4));
-  const full = (c) => `${c.name} (${K.sources[c.platform].label})`;
+  const label = (c) => `${K.sources[c.platform].label} ` + (names ? `"${K.label(c)}"` : K.NOUN[K.levelOf(c)] + ' …' + String(c.id).slice(-4));
+  const full = (c) => `${K.label(c)} (${K.sources[c.platform].label})`;
   const note = [];
   for (const rule of due) {
     const hits = K.evaluate(rule);
@@ -159,7 +159,7 @@ async function run(env, now) {
       const r = await K.run(rule);
       failed += r.failed;
       K.state.log.slice(0, K.state.log.length - before).reverse().forEach((e) => {
-        const c = K.campaigns.find((x) => x.id === e.cid);
+        const c = K.find(e.cid);
         say(`  ${c ? label(c) : 'campaign'}: ${e.text}`);
         lines.push(`${c ? full(c) : e.campaign}: ${e.text}`);
       });

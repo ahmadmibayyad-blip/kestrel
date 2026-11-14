@@ -193,3 +193,10 @@ table.c-list td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0
 .c-copy { display: block; font-size: 0.875rem; }
 .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 .btn[disabled]:hover { background: var(--cobalt); color: #fff; }
+
+/* level tabs on the Campaigns screen */
+.tabs { display: inline-flex; border: 1.5px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--panel); }
+.tabs button { border: 0; background: none; padding: 7px 14px; font-weight: 600; cursor: pointer; color: var(--muted); border-left: 1.5px solid var(--line); }
+.tabs button:first-child { border-left: 0; }
+.tabs button[aria-selected='true'] { background: var(--ink); color: #fff; }
+.tabs button span { font-weight: 400; opacity: 0.75; margin-left: 2px; }

@@ -109,7 +109,30 @@
         });
       }
     });
+    // Ad sets and ads, so rules can work below campaign level. A second generator keeps the
+    // campaign numbers above exactly as they were.
+    const r2 = rng(20261115);
+    K.adsets = [];
+    K.campaigns.forEach((c, i) => {
+      const s = SEED[i];
+      ['Broad audience', 'Lookalike audience'].forEach((name, j) => {
+        const share = j ? 0.4 : 0.6;
+        K.adsets.push({ id: c.id + '-s' + j, level: 'adset', name, parent: c, platform: c.platform, status: c.status, budget: Math.round(s[2] * share),
+          days: series(r2, s[2] * share, s[3] * (j ? 0.55 : 1.3), s[4], s[5], s[6], s[7]) });
+      });
+    });
+    K.ads = K.creatives;
+    K.ads.forEach((a) => { a.level = 'ad'; a.parent = a.campaign; a.platform = a.campaign.platform; a.status = a.campaign.status; a.budget = 0; a.noBudget = true; a.budgetNote = 'Ads have no budget'; });
   }
+
+  /* Campaigns, ad sets and ads share one shape, so rules, the table and undo treat them alike. */
+  K.NOUN = { campaign: 'campaign', adset: 'ad set', ad: 'ad' };
+  K.levelOf = (e) => e.level || 'campaign';
+  K.entities = (level) => (level === 'adset' ? K.adsets : level === 'ad' ? K.ads : K.campaigns) || [];
+  K.all = () => K.campaigns.concat(K.adsets || [], K.ads || []);
+  K.find = (id) => K.all().find((e) => e.id === id);
+  /** A name for logs and messages: ad sets and ads say what they are and which campaign they belong to. */
+  K.label = (e) => (K.levelOf(e) === 'campaign' ? e.name : `${e.name} (${K.NOUN[e.level]} in ${e.parent ? e.parent.name : 'a campaign'})`);
 
   /** Totals and derived metrics for `n` days, ending `offset` days before today. */
   K.agg = function (days, n, offset) {
@@ -163,10 +186,14 @@
   /** When a rule should next run on a schedule, given when it last ran. */
   K.nextRun = (rule, last) => (last || 0) + (K.FREQ_MIN[rule.freq] || 60) * 60e3;
   K.isDue = (rule, last, now) => now >= K.nextRun(rule, last) - 60e3; // a minute of slack for late timers
-  K.ACTIONS = {
-    pause: 'pause the campaign', activate: 'turn the campaign back on',
-    inc: 'increase the daily budget', dec: 'decrease the daily budget', notify: 'send me an alert',
+  /** What a rule can do at a level. Ads have no budget of their own, so budget actions stop at ad sets. */
+  K.actions = function (level) {
+    const n = K.NOUN[level || 'campaign'];
+    const a = { pause: `pause the ${n}`, activate: `turn the ${n} back on`, inc: 'increase the daily budget', dec: 'decrease the daily budget', notify: 'send me an alert' };
+    if (level === 'ad') { delete a.inc; delete a.dec; }
+    return a;
   };
+  K.ACTIONS = K.actions('campaign');
   K.TEMPLATES = [
     { name: 'Stop losing campaigns', platform: 'all', match: 'all', freq: '30 minutes',
       conditions: [{ metric: 'roas', op: 'lt', value: 1.2, window: 3 }, { metric: 'spend', op: 'gt', value: 150, window: 3 }],
@@ -205,7 +232,7 @@
   /** Campaigns a rule would act on right now, with the measured value for each condition. */
   K.evaluate = function (rule) {
     const want = rule.action.type === 'activate' ? 'paused' : 'active';
-    return K.campaigns
+    return K.entities(rule.level)
       .filter((c) => c.status === want && (rule.platform === 'all' || c.platform === rule.platform))
       .map((c) => {
         const values = rule.conditions.map((cd) => {
@@ -240,16 +267,17 @@
     const val = m.unit === '$' ? symbol + cd.value : cd.value + m.unit;
     return `${m.label} ${K.OPS[cd.op]} ${val} over the last ${cd.window} ${cd.window === 1 ? 'day' : 'days'}`;
   };
-  K.actionText = function (a) {
+  K.actionText = function (a, level) {
     if (a.type === 'inc') return `increase the daily budget by ${a.pct}%` + (a.cap > 0 ? `, up to ${symbol}${a.cap}` : '');
     if (a.type === 'dec') return `decrease the daily budget by ${a.pct}%` + (a.cap > 0 ? `, no lower than ${symbol}${a.cap}` : '');
-    return K.ACTIONS[a.type];
+    return K.actions(level)[a.type] || K.ACTIONS[a.type];
   };
   /** The measured values that made a campaign match a rule, e.g. "ROAS 0.52x over 3 days". */
   K.hitText = (rule, hit) => rule.conditions.map((cd, i) => `${K.METRICS[cd.metric].label} ${K.METRICS[cd.metric].fmt(hit.values[i].v)} over ${cd.window} ${cd.window === 1 ? 'day' : 'days'}`).join(', ');
   K.ruleText = function (r) {
     const joiner = r.match === 'any' ? ' or ' : ' and ';
-    return `When ${r.conditions.map(K.conditionText).join(joiner)}, ${K.actionText(r.action)}.`;
+    const where = r.level && r.level !== 'campaign' ? `For each ${K.NOUN[r.level]}: when ` : 'When ';
+    return `${where}${r.conditions.map(K.conditionText).join(joiner)}, ${K.actionText(r.action, r.level)}.`;
   };
 
   /* `extra` may carry cid (the campaign's id) and undo ({ kind, from, to }) so the change can be reversed. */
@@ -288,18 +316,22 @@
       const sum = (k) => data.campaigns.reduce((n, c) => n + c.days.reduce((m, d) => m + d[k], 0), 0);
       const blind = sum('spend') > 0 && sum('conv') === 0 && sum('rev') === 0;
       if (blind) data.campaigns.forEach((c) => { c.noSales = true; });
+      const below = (data.adsets || []).concat(data.ads || []);
+      below.forEach((e) => { if (e.parent && e.parent.noSales) e.noSales = true; });
       s.note = blind || data.campaigns.some((c) => c.noSales)
         ? `${s.label} reported no purchases for the last ${DAYS} days. If this account sells online, purchase tracking looks missing; if it runs lead, message or engagement campaigns, use Results and Cost per result instead. Rules based on purchases, revenue or ROAS skip its campaigns.`
         : '';
       // The same care for results: a campaign that spent money but shows no results at all may
       // simply have results the platform does not report (some messaging results, for example).
       // Treating that as "cost per result is infinite" would pause it, so result-based rules skip it.
-      data.campaigns.forEach((c) => {
+      data.campaigns.concat(below).forEach((c) => {
         const total = (k) => c.days.reduce((m, d) => m + (k === 'res' ? (d.res != null ? d.res : d.conv) : d[k]), 0);
-        if (c.noResults === undefined) c.noResults = total('spend') > 0 && total('res') === 0;
+        if (c.noResults === undefined) c.noResults = (c.parent && c.parent.noResults === true) || (total('spend') > 0 && total('res') === 0);
       });
     });
     K.campaigns = parts.flatMap((p) => p.campaigns);
+    K.adsets = parts.flatMap((p) => p.adsets || []);
+    K.ads = parts.flatMap((p) => p.ads || []);
     K.creatives = parts.flatMap((p) => p.creatives).sort((a, b) => b.spent - a.spent).slice(0, 60);
     K.loadState();
     K.loadedAt = Date.now();
@@ -323,10 +355,10 @@
       try {
         if (a.type === 'pause') await K.changeStatus(c, 'paused', rule.name);
         else if (a.type === 'activate') await K.changeStatus(c, 'active', rule.name);
-        else if (a.type === 'notify') { K.log(rule.name, c.name, 'Alert: ' + K.hitText(rule, h), { cid: c.id }); alerts++; continue; }
+        else if (a.type === 'notify') { K.log(rule.name, K.label(c), 'Alert: ' + K.hitText(rule, h), { cid: c.id }); alerts++; continue; }
         else await K.changeBudget(c, K.nextBudget(c, a), rule.name);
         changed++;
-      } catch (e) { failed++; K.log(rule.name, c.name, 'Failed: ' + e.message, { cid: c.id }); }
+      } catch (e) { failed++; K.log(rule.name, K.label(c), 'Failed: ' + e.message, { cid: c.id }); }
     }
     rule.runs += 1; rule.lastRun = Date.now();
     K.save();
@@ -338,17 +370,17 @@
   K.changeStatus = async function (c, to, source) {
     const from = c.status;
     await K.applyStatus(c, to);
-    return K.log(source, c.name, to === 'active' ? 'Turned back on' : 'Paused', { cid: c.id, undo: { kind: 'status', from, to } });
+    return K.log(source, K.label(c), to === 'active' ? 'Turned back on' : 'Paused', { cid: c.id, undo: { kind: 'status', from, to } });
   };
   K.changeBudget = async function (c, to, source) {
     const from = c.budget;
     await K.applyBudget(c, to);
-    return K.log(source, c.name, `Daily budget ${K.fmt.money(from)} to ${K.fmt.money(to)}`, { cid: c.id, undo: { kind: 'budget', from, to } });
+    return K.log(source, K.label(c), `Daily budget ${K.fmt.money(from)} to ${K.fmt.money(to)}`, { cid: c.id, undo: { kind: 'budget', from, to } });
   };
   /** Why a logged change cannot be undone right now, or '' if it can. */
   K.undoBlocker = function (entry) {
     if (!entry.undo || entry.undone) return 'Nothing to undo.';
-    const c = K.campaigns.find((x) => x.id === entry.cid);
+    const c = K.find(entry.cid);
     if (!c) return 'That campaign is not in the account shown now.';
     const now = entry.undo.kind === 'status' ? c.status : c.budget;
     if (now !== entry.undo.to) return 'The campaign has changed again since then, so undoing would overwrite a newer change.';
@@ -358,10 +390,10 @@
   K.undo = async function (entry) {
     const why = K.undoBlocker(entry);
     if (why) throw new Error(why);
-    const c = K.campaigns.find((x) => x.id === entry.cid), u = entry.undo;
+    const c = K.find(entry.cid), u = entry.undo;
     if (u.kind === 'status') await K.applyStatus(c, u.from); else await K.applyBudget(c, u.from);
     entry.undone = true;
-    K.log('You (undo)', c.name, u.kind === 'status' ? (u.from === 'active' ? 'Turned back on' : 'Paused') : `Daily budget ${K.fmt.money(u.to)} back to ${K.fmt.money(u.from)}`, { cid: c.id });
+    K.log('You (undo)', K.label(c), u.kind === 'status' ? (u.from === 'active' ? 'Turned back on' : 'Paused') : `Daily budget ${K.fmt.money(u.to)} back to ${K.fmt.money(u.from)}`, { cid: c.id });
     K.save();
   };
 
@@ -369,7 +401,7 @@
   const key = () => (K.mode === 'live' ? 'kestrel-live-v1' : 'kestrel-demo-v1');
   K.save = function () {
     const o = { rules: K.state.rules, log: K.state.log, range: K.state.range, platform: K.state.platform, auto: K.state.auto, c: {} };
-    if (K.mode === 'sample') K.campaigns.forEach((c) => (o.c[c.id] = [c.status, c.budget]));
+    if (K.mode === 'sample') K.all().forEach((c) => (o.c[c.id] = [c.status, c.budget]));
     try { localStorage.setItem(key(), JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
   };
   /** Rules, log and filters for the current account. A live account starts with every rule off. */
@@ -385,7 +417,7 @@
       K.state.range = saved.range || 7; K.state.auto = !!saved.auto;
       if (K.mode === 'sample') {
         K.state.platform = saved.platform || 'all';
-        K.campaigns.forEach((c) => { const x = saved.c && saved.c[c.id]; if (x) { c.status = x[0]; c.budget = x[1]; } });
+        K.all().forEach((c) => { const x = saved.c && saved.c[c.id]; if (x) { c.status = x[0]; c.budget = x[1]; } });
       }
     } else {
       K.state.rules = K.TEMPLATES.slice(0, 4).map((t, i) => { const r = K.newRule(t); r.id = 'r-default-' + i; r.enabled = K.mode === 'sample' && i !== 2; return r; });

@@ -3,9 +3,11 @@
   const K = window.K, F = K.fmt, esc = K.esc, M = K.METRICS;
   const $ = (s, r) => (r || document).querySelector(s);
   const main = $('#main');
-  const ui = { sort: { key: 'spend', dir: -1 }, sel: new Set(), q: '', draft: null, cSort: 'roas', rGroup: 'platform', rMetric: 'roas' };
+  const ui = { level: 'campaign', sort: { key: 'spend', dir: -1 }, sel: new Set(), q: '', draft: null, cSort: 'roas', rGroup: 'platform', rMetric: 'roas' };
 
   const visible = () => K.campaigns.filter((c) => K.state.platform === 'all' || c.platform === K.state.platform);
+  /** What the Campaigns screen lists: campaigns, ad sets or ads, for the platform chosen. */
+  const shown = () => K.entities(ui.level).filter((c) => K.state.platform === 'all' || c.platform === K.state.platform);
   const pdot = (p) => `<i class="pdot" style="background:${K.PLATFORMS[p].color}" title="${K.PLATFORMS[p].name}"></i>`;
   const range = () => K.state.range;
   const view = () => (location.hash.replace('#', '') || 'overview');
@@ -99,16 +101,18 @@
   const leadMode = (cs) => cs.length > 0 && cs.every((c) => c.noSales);
   function campaigns() {
     const n = range(), q = ui.q.toLowerCase();
-    const lead = leadMode(visible()), COLS = lead ? ['spend', 'res', 'cpr', 'ctr', 'cpc', 'clicks'] : ['spend', 'revenue', 'roas', 'cpa', 'ctr', 'conv'];
-    const rows = visible().filter((c) => c.name.toLowerCase().includes(q)).map((c) => ({ c, m: K.agg(c.days, n) }));
+    const lead = leadMode(shown()), COLS = lead ? ['spend', 'res', 'cpr', 'ctr', 'cpc', 'clicks'] : ['spend', 'revenue', 'roas', 'cpa', 'ctr', 'conv'];
+    const plural = { campaign: 'campaigns', adset: 'ad sets', ad: 'ads' }[ui.level];
+    const rows = shown().filter((c) => c.name.toLowerCase().includes(q)).map((c) => ({ c, m: K.agg(c.days, n) }));
     const k = ui.sort.key;
     rows.sort((a, b) => (k === 'name' ? a.c.name.localeCompare(b.c.name) : k === 'budget' ? a.c.budget - b.c.budget : a.m[k] - b.m[k]) * ui.sort.dir);
     const th = (key, label, cls) => `<th class="${cls || ''}"><button class="th" data-act="sort" data-key="${key}" aria-label="Sort by ${label}">${label}${ui.sort.key === key ? (ui.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</button></th>`;
     const total = K.sum(rows.map((r) => r.m));
     main.innerHTML = `
-      <header class="view-head"><h1>Campaigns</h1><p class="muted">Turn campaigns on or off, edit budgets, or select several and change them together.</p></header>
+      <header class="view-head"><h1>Campaigns</h1><p class="muted">Turn campaigns, ad sets and ads on or off, edit budgets, or select several and change them together.</p></header>
       <div class="toolbar">
-        <input type="search" id="q" placeholder="Search campaigns" value="${esc(ui.q)}" aria-label="Search campaigns">
+        <div class="tabs" role="tablist" aria-label="Level">${[['campaign', 'Campaigns'], ['adset', 'Ad sets'], ['ad', 'Ads']].map(([v, l]) => `<button role="tab" aria-selected="${ui.level === v}" data-act="level" data-level="${v}">${l} <span>${K.entities(v).filter((c) => K.state.platform === 'all' || c.platform === K.state.platform).length}</span></button>`).join('')}</div>
+        <input type="search" id="q" placeholder="Search ${plural}" value="${esc(ui.q)}" aria-label="Search ${plural}">
         <div class="bulk" ${ui.sel.size ? '' : 'hidden'}>
           <span>${ui.sel.size} selected</span>
           <button class="btn sm" data-act="bulk" data-op="pause">Pause</button>
@@ -124,13 +128,13 @@
           <tr class="${c.status === 'paused' ? 'is-paused' : ''}">
             <td><input type="checkbox" data-act="sel" data-id="${c.id}" aria-label="Select ${esc(c.name)}" ${ui.sel.has(c.id) ? 'checked' : ''}></td>
             <td><button class="switch" role="switch" aria-checked="${c.status === 'active'}" data-act="toggle" data-id="${c.id}" aria-label="${esc(c.name)} is ${c.status}"></button></td>
-            <td class="left name">${pdot(c.platform)}${esc(c.name)}${c.status === 'paused' ? ' <span class="tag">Paused</span>' : ''}${lead && c.resultName ? `<span class="result-type">${esc(c.resultName)}${c.noResults ? ', no figures from the platform' : ''}</span>` : lead && c.noResults ? '<span class="result-type">No result figures from the platform</span>' : ''}</td>
+            <td class="left name">${pdot(c.platform)}${esc(c.name)}${c.status === 'paused' ? ' <span class="tag">Paused</span>' : ''}${c.parent ? `<span class="result-type">in ${esc(c.parent.name)}</span>` : ""}${lead && c.resultName ? `<span class="result-type">${esc(c.resultName)}${c.noResults ? ', no figures from the platform' : ''}</span>` : lead && c.noResults ? '<span class="result-type">No result figures from the platform</span>' : ''}</td>
             <td>${c.noBudget ? `<span class="muted small">${esc(c.budgetNote || 'Set on ad sets')}</span>`
               : `<span class="budget">${esc(K.sym())}<input type="number" min="1" step="10" value="${c.budget}" data-budget="${c.id}" aria-label="Daily budget for ${esc(c.name)}"></span>`}</td>
             ${COLS.map((k2) => `<td>${M[k2].fmt(m[k2])}</td>`).join('')}
-          </tr>`).join('') || `<tr><td colspan="${4 + COLS.length}" class="empty">No campaigns match "${esc(ui.q)}". Clear the search to see them all.</td></tr>`}
+          </tr>`).join('') || `<tr><td colspan="${4 + COLS.length}" class="empty">${ui.q ? `No ${plural} match "${esc(ui.q)}". Clear the search to see them all.` : live() && ui.level !== 'campaign' ? `No ${plural} to show. Ad sets and ads are loaded for Meta accounts.` : `No ${plural} to show.`}</td></tr>`}
         </tbody>
-        ${rows.length ? `<tfoot><tr><td></td><td></td><td class="left">${rows.length} campaigns</td><td>${F.money(rows.filter((r) => r.c.status === 'active').reduce((s, r) => s + r.c.budget, 0))}</td>${COLS.map((k2) => `<td>${M[k2].fmt(total[k2])}</td>`).join('')}</tr></tfoot>` : ''}
+        ${rows.length ? `<tfoot><tr><td></td><td></td><td class="left">${rows.length} ${plural}</td><td>${F.money(rows.filter((r) => r.c.status === 'active').reduce((s, r) => s + r.c.budget, 0))}</td>${COLS.map((k2) => `<td>${M[k2].fmt(total[k2])}</td>`).join('')}</tr></tfoot>` : ''}
       </table></div></div>`;
   }
 
@@ -141,11 +145,12 @@
 
   function previewHtml(r) {
     const hits = K.evaluate(r);
-    if (!r.conditions.length) return '<p class="empty">Add a condition to see which campaigns this rule would change.</p>';
-    if (!hits.length) return `<p class="empty">No ${r.action.type === 'activate' ? 'paused' : 'active'} campaigns meet these conditions right now.</p>`;
-    return `<p><b>${hits.length} campaign${hits.length === 1 ? '' : 's'}</b> would change if this rule ran now.</p>
-      <div class="table-wrap"><table class="plain"><thead><tr><th class="left">Campaign</th>${r.conditions.map((cd) => `<th>${M[cd.metric].label}, ${cd.window}d</th>`).join('')}<th class="left">Change</th></tr></thead><tbody>
-      ${hits.map((h) => `<tr><td class="left name">${pdot(h.c.platform)}${esc(h.c.name)}</td>${h.values.map((v, i) => `<td class="${v.hit ? 'hit' : ''}">${M[r.conditions[i].metric].fmt(v.v)}</td>`).join('')}
+    const noun = K.NOUN[r.level || 'campaign'];
+    if (!r.conditions.length) return `<p class="empty">Add a condition to see which ${noun}s this rule would change.</p>`;
+    if (!hits.length) return `<p class="empty">No ${r.action.type === 'activate' ? 'paused' : 'active'} ${noun}s meet these conditions right now.</p>`;
+    return `<p><b>${hits.length} ${noun}${hits.length === 1 ? '' : 's'}</b> would change if this rule ran now.</p>
+      <div class="table-wrap"><table class="plain"><thead><tr><th class="left">${noun[0].toUpperCase() + noun.slice(1)}</th>${r.conditions.map((cd) => `<th>${M[cd.metric].label}, ${cd.window}d</th>`).join('')}<th class="left">Change</th></tr></thead><tbody>
+      ${hits.map((h) => `<tr><td class="left name">${pdot(h.c.platform)}${esc(h.c.name)}${h.c.parent ? `<span class="result-type">in ${esc(h.c.parent.name)}</span>` : ""}</td>${h.values.map((v, i) => `<td class="${v.hit ? 'hit' : ''}">${M[r.conditions[i].metric].fmt(v.v)}</td>`).join('')}
         <td class="left">${r.action.type === 'pause' ? 'Pause' : r.action.type === 'activate' ? 'Turn on' : r.action.type === 'notify' ? 'Alert' : F.money(h.c.budget) + ' to ' + F.money(K.nextBudget(h.c, r.action))}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
@@ -160,14 +165,14 @@
     return `<div class="panel editor">
       <label class="field"><span>Rule name</span><input type="text" data-d="name" value="${esc(r.name)}" maxlength="60"></label>
       <div class="sentence">
-        <p>On ${tok('platform', [['all', 'all platforms'], ...Object.entries(K.PLATFORMS).map(([k, p]) => [k, p.name])], r.platform, 'Platform')} campaigns, when
+        <p>On ${tok('platform', [['all', 'all platforms'], ...Object.entries(K.PLATFORMS).map(([k, p]) => [k, p.name])], r.platform, 'Platform')} ${tok('level', [['campaign', 'campaigns'], ['adset', 'ad sets'], ['ad', 'ads']], r.level || 'campaign', 'What the rule looks at')}, when
           ${tok('match', [['all', 'all'], ['any', 'any']], r.match, 'Match all or any')} of these are true:</p>
         <ul class="conds">${r.conditions.map((cd, i) => `<li>
           ${tok(`conditions.${i}.metric`, metrics, cd.metric, 'Metric')} ${tok(`conditions.${i}.op`, Object.entries(K.OPS), cd.op, 'Comparison')}
           ${numTok(`conditions.${i}.value`, cd.value, 'Value')} over the last ${tok(`conditions.${i}.window`, windows, cd.window, 'Time window')}
           <button class="x" data-act="del-cond" data-i="${i}" aria-label="Remove condition">×</button></li>`).join('')}</ul>
         <p><button class="btn sm ghost" data-act="add-cond">Add condition</button></p>
-        <p>then ${tok('action.type', Object.entries(K.ACTIONS), a.type, 'Action')}
+        <p>then ${tok('action.type', Object.entries(K.actions(r.level)), a.type, 'Action')}
           ${budget ? `by ${numTok('action.pct', a.pct, 'Percent', 1)}% ${a.type === 'inc' ? 'up to' : 'no lower than'} ${esc(K.sym())}${numTok('action.cap', a.cap, 'Budget limit', 10)}` : ''}.
           Check every ${tok('freq', [['15 minutes', '15 minutes'], ['30 minutes', '30 minutes'], ['hour', 'hour'], ['6 hours', '6 hours'], ['day', 'day']], r.freq, 'Frequency')}.</p>
       </div>
@@ -177,6 +182,7 @@
         <button class="btn" data-act="run-rule">Save and run now</button>
         ${saved ? '<button class="btn ghost danger" data-act="del-rule">Delete rule</button>' : ''}
       </div>
+      ${r.level && r.level !== 'campaign' && live() ? '<p class="hint">Ad set and ad rules apply to Meta accounts for now. Other platforms are covered by campaign rules.</p>' : ''}
       <p class="hint">In this demo a rule runs when you press Run. Connected to a live ad account it would run on the schedule above.</p>
     </div>`;
   }
@@ -498,21 +504,22 @@
 
   async function onClick(el) {
     const act = el.dataset.act, id = el.dataset.id;
-    const c = id && K.campaigns.find((x) => x.id === id);
+    const c = id && K.find(id);
     const rule = id && K.state.rules.find((x) => x.id === id);
-    if (act === 'sort') { const k = el.dataset.key; ui.sort = { key: k, dir: ui.sort.key === k ? -ui.sort.dir : k === 'name' ? 1 : -1 }; }
+    if (act === 'level') { ui.level = el.dataset.level; ui.sel.clear(); ui.q = ''; }
+    else if (act === 'sort') { const k = el.dataset.key; ui.sort = { key: k, dir: ui.sort.key === k ? -ui.sort.dir : k === 'name' ? 1 : -1 }; }
     else if (act === 'toggle') {
       const to = c.status === 'active' ? 'paused' : 'active';
       if (blocked(c) || !sure(`${to === 'paused' ? 'Pause' : 'Turn on'} "${c.name}"?`)) return;
       await K.changeStatus(c, to, 'You'); K.save();
     }
     else if (act === 'sel') { el.checked ? ui.sel.add(id) : ui.sel.delete(id); }
-    else if (act === 'sel-all') { ui.sel = new Set(el.checked ? visible().filter((x) => x.name.toLowerCase().includes(ui.q.toLowerCase())).map((x) => x.id) : []); }
+    else if (act === 'sel-all') { ui.sel = new Set(el.checked ? shown().filter((x) => x.name.toLowerCase().includes(ui.q.toLowerCase())).map((x) => x.id) : []); }
     else if (act === 'bulk') {
       const op = el.dataset.op, r = { changed: 0, failed: 0, skipped: 0, alerts: 0 };
       const label = { pause: 'Pause', activate: 'Turn on', up: 'Raise the budget of', down: 'Cut the budget of' }[op];
       if (blocked() || !sure(`${label} ${ui.sel.size} selected campaign${ui.sel.size === 1 ? '' : 's'}?`)) return;
-      for (const x of K.campaigns.filter((y) => ui.sel.has(y.id))) {
+      for (const x of K.all().filter((y) => ui.sel.has(y.id))) {
         if (!K.canWrite(x)) { r.skipped++; continue; }
         try {
           if (op === 'pause' && x.status === 'active') { await K.changeStatus(x, 'paused', 'You'); r.changed++; }
@@ -535,7 +542,7 @@
       if (!saveDraft()) return;
       const saved = K.state.rules.find((x) => x.id === ui.draft.id);
       const n = K.evaluate(saved).length;
-      if (n && (blocked() || !sure(`Run "${saved.name}"? It will change ${n} campaign${n === 1 ? '' : 's'}.`))) return;
+      if (n && (blocked() || !sure(`Run "${saved.name}"? It will change ${n} ${K.NOUN[saved.level || 'campaign']}${n === 1 ? '' : 's'}.`))) return;
       const r = await K.run(saved); ui.draft = JSON.parse(JSON.stringify(saved));
       toast(summary(`"${saved.name}"`, r));
     }
@@ -546,7 +553,7 @@
       if (!entry) return;
       const why = K.undoBlocker(entry);
       if (why) { toast(why); return; }
-      const camp = K.campaigns.find((x) => x.id === entry.cid);
+      const camp = K.find(entry.cid);
       if (blocked(camp) || !sure(`Undo "${entry.text}" on "${camp.name}"?`)) return;
       await K.undo(entry);
       toast(`Undone on "${camp.name}"`);
@@ -676,14 +683,14 @@
     else if (t.id === 'rmetric') { ui.rMetric = t.value; render(); }
     else if (t.id === 'tpl' && t.value !== '') { ui.draft = K.newRule(K.TEMPLATES[+t.value]); render(); }
     else if (t.dataset.budget) {
-      const c = K.campaigns.find((x) => x.id === t.dataset.budget), from = c.budget, b = Math.max(1, Math.round(+t.value || from));
+      const c = K.find(t.dataset.budget), from = c.budget, b = Math.max(1, Math.round(+t.value || from));
       if (b === from || blocked(c) || !sure(`Change the daily budget of "${c.name}" from ${F.money(from)} to ${F.money(b)}?`)) { render(); return; }
       K.changeBudget(c, b, 'You')
         .then(() => { K.save(); toast('Budget updated'); })
         .catch((err) => toast(err.message))
         .then(render);
     }
-    else if (t.dataset.d && ui.draft && t.tagName === 'SELECT') { setPath(ui.draft, t.dataset.d, t.value); $('#editor').innerHTML = editorHtml(); K.fitToks(main); }
+    else if (t.dataset.d && ui.draft && t.tagName === 'SELECT') { setPath(ui.draft, t.dataset.d, t.value); if (t.dataset.d === 'level' && !K.actions(ui.draft.level)[ui.draft.action.type]) ui.draft.action.type = 'pause'; $('#editor').innerHTML = editorHtml(); K.fitToks(main); }
   });
   document.addEventListener('input', (e) => {
     const t = e.target;
