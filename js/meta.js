@@ -11,12 +11,14 @@
 
   const M = (K.meta = K.sources.meta = {
     platform: 'meta', label: 'Meta',
-    version: '',        // empty uses Meta's default API version; set e.g. 'v24.0' to pin one
+    // Meta refuses calls that name no version or an old one. If this one is retired, Meta's error
+    // names the version to use and api() below switches to it by itself.
+    version: 'v27.0',
     conn: null,         // { token, account: { id, name, currency }, allow }
     get allowChanges() { return !!(M.conn && M.conn.allow); },
   });
 
-  async function api(path, params, method) {
+  async function api(path, params, method, upgraded) {
     const full = /^https:/.test(path);
     const url = new URL(full ? path : G + (M.version ? M.version + '/' : '') + path);
     const token = (params && params._token) || (M.conn && M.conn.token);
@@ -34,6 +36,9 @@
     const j = await res.json().catch(() => ({}));
     if (j.error) {
       const e = j.error;
+      // "(#2635) You are calling a deprecated version of the Ads API. Please upgrade to the latest version: v27.0."
+      const newer = e.code === 2635 && /v\d+\.\d+/.exec(String(e.message || ''));
+      if (newer && !upgraded && !full && newer[0] !== M.version) { M.version = newer[0]; return api(path, params, method, true); }
       if (e.code === 190) throw new Error('Your Meta access token is expired or invalid. Paste a new one on the Connection screen.');
       if (e.code === 200 || e.code === 10) throw new Error('This token is not allowed to do that. It needs the ads_read permission to read and ads_management to make changes.');
       throw new Error(e.error_user_msg || e.message || 'Meta returned an error.');

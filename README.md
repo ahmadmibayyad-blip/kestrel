@@ -42,7 +42,8 @@ What to know:
 - Rules run when you press Run, or automatically (see below).
 - Tokens from Meta's Graph API Explorer expire after an hour or two. A long-lived or system
   user token lasts longer.
-- Requests use Meta's default API version. Set `K.meta.version` in `js/meta.js` to pin one.
+- Requests name a Meta API version (`K.meta.version` in `js/meta.js`). When Meta retires it, its error names the
+  version to use and Kestrel switches to that by itself.
 
 ## Connect a real Google Ads account
 
