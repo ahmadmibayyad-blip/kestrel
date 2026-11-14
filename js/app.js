@@ -150,11 +150,23 @@
     if (!hits.length) return `<p class="empty">No ${r.action.type === 'activate' ? 'paused' : 'active'} ${noun}s meet these conditions right now.</p>`;
     return `<p><b>${hits.length} ${noun}${hits.length === 1 ? '' : 's'}</b> would change if this rule ran now.</p>
       <div class="table-wrap"><table class="plain"><thead><tr><th class="left">${noun[0].toUpperCase() + noun.slice(1)}</th>${r.conditions.map((cd) => `<th>${M[cd.metric].label}, ${cd.window}d</th>`).join('')}<th class="left">Change</th></tr></thead><tbody>
-      ${hits.map((h) => `<tr><td class="left name">${pdot(h.c.platform)}${esc(h.c.name)}${h.c.parent ? `<span class="result-type">in ${esc(h.c.parent.name)}</span>` : ""}</td>${h.values.map((v, i) => `<td class="${v.hit ? 'hit' : ''}">${M[r.conditions[i].metric].fmt(v.v)}</td>`).join('')}
+      ${hits.map((h) => `<tr><td class="left name">${pdot(h.c.platform)}${esc(h.c.name)}${h.c.parent ? `<span class="result-type">in ${esc(h.c.parent.name)}</span>` : ""}</td>${h.values.map((v, i) => `<td class="${v.hit ? 'hit' : ''}">${M[r.conditions[i].metric].fmt(v.v)}${r.conditions[i].vs && r.conditions[i].vs !== "value" && isFinite(v.target) ? `<span class="cmp-val">against ${M[r.conditions[i].vs === "metric" ? r.conditions[i].vsMetric || r.conditions[i].metric : r.conditions[i].metric].fmt(v.target)}</span>` : ""}</td>`).join('')}
         <td class="left">${r.action.type === 'pause' ? 'Pause' : r.action.type === 'activate' ? 'Turn on' : r.action.type === 'notify' ? 'Alert' : F.money(h.c.budget) + ' to ' + F.money(K.nextBudget(h.c, r.action))}</td></tr>`).join('')}
       </tbody></table></div>`;
   }
 
+  /** One condition as a sentence. It compares a metric with a set amount, with its own earlier level, or with another metric. */
+  function condRow(cd, i, metrics, windows) {
+    const p = `conditions.${i}.`, vs = cd.vs || 'value';
+    const metric = tok(p + 'metric', metrics, cd.metric, 'Metric'), op = tok(p + 'op', Object.entries(K.OPS), cd.op, 'Comparison');
+    const win = tok(p + 'window', windows, cd.window, 'Time window');
+    const kind = tok(p + 'vs', [['value', 'a set amount'], ['prev', 'its earlier level'], ['metric', 'another metric']], vs, 'Compare with');
+    const factor = () => `${numTok(p + 'factor', cd.factor > 0 ? cd.factor : 1, 'Multiplier')}×`;
+    const span = () => tok(p + 'vsWindow', windows.filter(([d]) => d > 1), cd.vsWindow || 14, 'Comparison period');
+    if (vs === 'prev') return `${metric} over the last ${win} ${op} ${factor()} its level over the ${span()} before <span class="cmp">compared with ${kind}</span>`;
+    if (vs === 'metric') return `${metric} over the last ${win} ${op} ${factor()} ${tok(p + 'vsMetric', metrics, cd.vsMetric || cd.metric, 'Other metric')} over the last ${span()} <span class="cmp">compared with ${kind}</span>`;
+    return `${metric} ${op} ${numTok(p + 'value', cd.value, 'Value')} over the last ${win} <span class="cmp">compared with ${kind}</span>`;
+  }
   function editorHtml() {
     const r = ui.draft;
     if (!r) return `<div class="panel editor"><p class="empty">Pick a rule on the left to edit it, or start a new one from a template.</p></div>`;
@@ -168,12 +180,11 @@
         <p>On ${tok('platform', [['all', 'all platforms'], ...Object.entries(K.PLATFORMS).map(([k, p]) => [k, p.name])], r.platform, 'Platform')} ${tok('level', [['campaign', 'campaigns'], ['adset', 'ad sets'], ['ad', 'ads']], r.level || 'campaign', 'What the rule looks at')}, when
           ${tok('match', [['all', 'all'], ['any', 'any']], r.match, 'Match all or any')} of these are true:</p>
         <ul class="conds">${r.conditions.map((cd, i) => `<li>
-          ${tok(`conditions.${i}.metric`, metrics, cd.metric, 'Metric')} ${tok(`conditions.${i}.op`, Object.entries(K.OPS), cd.op, 'Comparison')}
-          ${numTok(`conditions.${i}.value`, cd.value, 'Value')} over the last ${tok(`conditions.${i}.window`, windows, cd.window, 'Time window')}
+          ${condRow(cd, i, metrics, windows)}
           <button class="x" data-act="del-cond" data-i="${i}" aria-label="Remove condition">×</button></li>`).join('')}</ul>
         <p><button class="btn sm ghost" data-act="add-cond">Add condition</button></p>
         <p>then ${tok('action.type', Object.entries(K.actions(r.level)), a.type, 'Action')}
-          ${budget ? `by ${numTok('action.pct', a.pct, 'Percent', 1)}% ${a.type === 'inc' ? 'up to' : 'no lower than'} ${esc(K.sym())}${numTok('action.cap', a.cap, 'Budget limit', 10)}` : ''}.
+          ${budget ? `by ${numTok('action.pct', a.pct, 'Percent', 1)}% ${a.type === 'inc' ? 'up to' : 'no lower than'} ${esc(K.sym())}${numTok('action.cap', a.cap, 'Budget limit', 10)}` : ''}${a.type === 'set' ? `to ${esc(K.sym())}${numTok('action.amount', a.amount || 100, 'Budget', 10)}` : ''}.
           Check every ${tok('freq', [['15 minutes', '15 minutes'], ['30 minutes', '30 minutes'], ['hour', 'hour'], ['6 hours', '6 hours'], ['day', 'day']], r.freq, 'Frequency')}.</p>
       </div>
       <div id="preview" class="preview">${previewHtml(r)}</div>
@@ -482,7 +493,13 @@
   function setPath(obj, path, val) {
     const parts = path.split('.'); const last = parts.pop();
     const target = parts.reduce((o, p) => o[p], obj);
-    target[last] = ['value', 'window', 'pct', 'cap'].includes(last) ? (parseFloat(val) || 0) : val;
+    target[last] = ['value', 'window', 'pct', 'cap', 'factor', 'vsWindow', 'amount'].includes(last) ? (parseFloat(val) || 0) : val;
+  }
+  /** Fills in sensible defaults when a choice in the rule editor opens up new fields. */
+  function tidyDraft(path) {
+    const r = ui.draft, m = path.match(/^conditions\.(\d+)\.vs$/);
+    if (m) { const cd = r.conditions[+m[1]]; if (cd.vs !== 'value') { cd.factor = cd.factor > 0 ? cd.factor : 1.5; cd.vsWindow = cd.vsWindow || 14; cd.vsMetric = cd.vsMetric || cd.metric; } }
+    if (path === 'action.type' && r.action.type === 'set' && !(r.action.amount > 0)) r.action.amount = 100;
   }
   function saveDraft() {
     const r = ui.draft; if (!r) return false;
@@ -690,7 +707,7 @@
         .catch((err) => toast(err.message))
         .then(render);
     }
-    else if (t.dataset.d && ui.draft && t.tagName === 'SELECT') { setPath(ui.draft, t.dataset.d, t.value); if (t.dataset.d === 'level' && !K.actions(ui.draft.level)[ui.draft.action.type]) ui.draft.action.type = 'pause'; $('#editor').innerHTML = editorHtml(); K.fitToks(main); }
+    else if (t.dataset.d && ui.draft && t.tagName === 'SELECT') { setPath(ui.draft, t.dataset.d, t.value); tidyDraft(t.dataset.d); if (t.dataset.d === 'level' && !K.actions(ui.draft.level)[ui.draft.action.type]) ui.draft.action.type = 'pause'; $('#editor').innerHTML = editorHtml(); K.fitToks(main); }
   });
   document.addEventListener('input', (e) => {
     const t = e.target;

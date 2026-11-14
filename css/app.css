@@ -200,3 +200,8 @@ table.c-list td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0
 .tabs button:first-child { border-left: 0; }
 .tabs button[aria-selected='true'] { background: var(--ink); color: #fff; }
 .tabs button span { font-weight: 400; opacity: 0.75; margin-left: 2px; }
+
+/* comparison conditions in the rule editor */
+.cmp { display: block; font-size: 0.8125rem; line-height: 1.6; color: var(--muted); margin: -2px 0 8px; }
+.cmp .tok { font-size: 0.8125rem; font-weight: 500; background: transparent; border-bottom-width: 1px; }
+.cmp-val { display: block; font-size: 0.75rem; font-weight: 400; color: var(--muted); }

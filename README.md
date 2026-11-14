@@ -177,6 +177,28 @@ What to know:
 - Pausing a campaign also stops its ad sets and ads from delivering, but Kestrel shows each
   item's own switch, as Ads Manager does. An ad set can be "on" inside a paused campaign.
 
+## What a rule can compare and do
+
+Each condition compares a metric over a time window with one of three things:
+
+- **A set amount.** "ROAS is below 1.2 over the last 3 days."
+- **Its own earlier level.** "Cost per result over the last 3 days is above 1.5× its level
+  over the 14 days before." This catches something getting worse without you having to know
+  the right number, and it works in any currency.
+- **Another metric.** "Cost per purchase over the last 7 days is above 30× CPC over the last
+  14 days."
+
+Conditions are joined with "all" or "any". When there is nothing to compare against (no spend
+in the earlier period, or history that does not reach back far enough), the condition does
+not match, so a missing baseline never triggers a change.
+
+A rule's action is one of: pause, turn back on, increase the budget by a percentage (with a
+ceiling), decrease it (with a floor), set the budget to a fixed amount, or send an alert.
+Budget actions apply to campaigns and ad sets.
+
+Not yet: several actions in one rule, nested groups of conditions, ranking ("the worst three
+ads"), and custom metrics.
+
 ## Create ads in bulk (Meta)
 
 The Create ads screen makes many Meta ads in one go. You give it several images, texts and

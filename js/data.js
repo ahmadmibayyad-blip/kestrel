@@ -189,8 +189,8 @@
   /** What a rule can do at a level. Ads have no budget of their own, so budget actions stop at ad sets. */
   K.actions = function (level) {
     const n = K.NOUN[level || 'campaign'];
-    const a = { pause: `pause the ${n}`, activate: `turn the ${n} back on`, inc: 'increase the daily budget', dec: 'decrease the daily budget', notify: 'send me an alert' };
-    if (level === 'ad') { delete a.inc; delete a.dec; }
+    const a = { pause: `pause the ${n}`, activate: `turn the ${n} back on`, inc: 'increase the daily budget', dec: 'decrease the daily budget', set: 'set the daily budget', notify: 'send me an alert' };
+    if (level === 'ad') { delete a.inc; delete a.dec; delete a.set; }
     return a;
   };
   K.ACTIONS = K.actions('campaign');
@@ -217,8 +217,12 @@
     { name: 'Scale cheap results', platform: 'all', match: 'all', freq: 'day',
       conditions: [{ metric: 'cpr', op: 'lt', value: 20, window: 7 }, { metric: 'res', op: 'gt', value: 10, window: 7 }],
       action: { type: 'inc', pct: 20, cap: 1500 } },
+    // These two compare a metric with its own earlier level, so they need no amounts to be set.
     { name: 'Rising cost per result alert', platform: 'all', match: 'all', freq: 'day',
-      conditions: [{ metric: 'cpr', op: 'gt', value: 40, window: 3 }],
+      conditions: [{ metric: 'cpr', op: 'gt', value: 40, window: 3, vs: 'prev', factor: 1.5, vsWindow: 14 }],
+      action: { type: 'notify', pct: 20, cap: 0 } },
+    { name: 'Sudden drop in click rate alert', platform: 'all', match: 'all', freq: 'day',
+      conditions: [{ metric: 'ctr', op: 'lt', value: 1, window: 3, vs: 'prev', factor: 0.7, vsWindow: 14 }, { metric: 'spend', op: 'gt', value: 50, window: 3 }],
       action: { type: 'notify', pct: 20, cap: 0 } },
   ];
 
@@ -237,11 +241,14 @@
       .map((c) => {
         const values = rule.conditions.map((cd) => {
           const v = K.agg(c.days, cd.window)[cd.metric];
-          // A campaign whose platform returned no purchase data never matches a purchase-based condition.
-          if (c.noSales && ['roas', 'revenue', 'cpa', 'conv'].includes(cd.metric)) return { v: NaN, hit: false };
-          // Likewise for results the platform does not report for this campaign.
-          if (c.noResults && ['res', 'cpr'].includes(cd.metric)) return { v: NaN, hit: false };
-          return { v, hit: cd.op === 'lt' ? v < cd.value : v > cd.value };
+          const unknown = (metric) => (c.noSales && ['roas', 'revenue', 'cpa', 'conv'].includes(metric)) || (c.noResults && ['res', 'cpr'].includes(metric));
+          // A campaign whose platform returned no purchase data never matches a purchase-based
+          // condition; likewise for results the platform does not report.
+          if (unknown(cd.metric) || (cd.vs === 'metric' && unknown(cd.vsMetric))) return { v: NaN, hit: false };
+          const target = K.target(c, cd);
+          // No baseline to compare against (nothing happened in the earlier period): never a match.
+          if (!isFinite(target) || (cd.vs && cd.vs !== 'value' && !(target > 0))) return { v, target, hit: false };
+          return { v, target, hit: cd.op === 'lt' ? v < target : v > target };
         });
         const hit = rule.match === 'any' ? values.some((x) => x.hit) : values.every((x) => x.hit);
         return { c, values, hit };
@@ -249,31 +256,54 @@
       .filter((m) => m.hit && (rule.conditions.length > 0))
       .filter((m) => {
         const a = rule.action;
-        if ((a.type === 'inc' || a.type === 'dec') && m.c.noBudget) return false; // budget is set on its ad sets
+        if (['inc', 'dec', 'set'].includes(a.type) && m.c.noBudget) return false; // budget is set elsewhere
         if (a.type === 'inc' && a.cap > 0 && m.c.budget >= a.cap) return false; // already at the ceiling
         if (a.type === 'dec' && a.cap > 0 && m.c.budget <= a.cap) return false; // already at the floor
+        if (a.type === 'set' && (!(a.amount > 0) || m.c.budget === Math.round(a.amount))) return false; // nothing to change
         return true;
       });
+  };
+
+  /* What a condition compares against. `vs` is:
+       'value' (or unset)  a set amount: cd.value
+       'prev'              cd.factor × the same metric over the cd.vsWindow days just before the window
+       'metric'            cd.factor × another metric (cd.vsMetric) over the last cd.vsWindow days */
+  K.target = function (c, cd) {
+    if (!cd.vs || cd.vs === 'value') return cd.value;
+    const factor = cd.factor > 0 ? cd.factor : 1, span = cd.vsWindow || 14;
+    const offset = cd.vs === 'prev' ? cd.window : 0;
+    // Ads carry 30 days of history. A comparison that reaches further back has nothing to compare with.
+    if (K.levelOf(c) === 'ad' && offset + span > 30) return NaN;
+    if (offset + span > DAYS) return NaN;
+    return factor * K.agg(c.days, span, offset)[cd.vs === 'prev' ? cd.metric : cd.vsMetric || cd.metric];
   };
 
   K.nextBudget = function (c, a) {
     if (a.type === 'inc') { const b = c.budget * (1 + a.pct / 100); return Math.round(a.cap > 0 ? Math.min(b, a.cap) : b); }
     if (a.type === 'dec') { const b = c.budget * (1 - a.pct / 100); return Math.round(a.cap > 0 ? Math.max(b, a.cap) : b); }
+    if (a.type === 'set') return Math.round(a.amount);
     return c.budget;
   };
 
+  const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
   K.conditionText = function (cd) {
-    const m = K.METRICS[cd.metric];
+    const m = K.METRICS[cd.metric], f = cd.factor > 0 ? cd.factor : 1, times = f === 1 ? '' : f + '× ';
+    if (cd.vs === 'prev') return `${m.label} over the last ${days(cd.window)} ${K.OPS[cd.op]} ${times}its level over the ${days(cd.vsWindow || 14)} before`;
+    if (cd.vs === 'metric') return `${m.label} over the last ${days(cd.window)} ${K.OPS[cd.op]} ${times}${K.METRICS[cd.vsMetric || cd.metric].label} over the last ${days(cd.vsWindow || 14)}`;
     const val = m.unit === '$' ? symbol + cd.value : cd.value + m.unit;
-    return `${m.label} ${K.OPS[cd.op]} ${val} over the last ${cd.window} ${cd.window === 1 ? 'day' : 'days'}`;
+    return `${m.label} ${K.OPS[cd.op]} ${val} over the last ${days(cd.window)}`;
   };
   K.actionText = function (a, level) {
     if (a.type === 'inc') return `increase the daily budget by ${a.pct}%` + (a.cap > 0 ? `, up to ${symbol}${a.cap}` : '');
     if (a.type === 'dec') return `decrease the daily budget by ${a.pct}%` + (a.cap > 0 ? `, no lower than ${symbol}${a.cap}` : '');
+    if (a.type === 'set') return `set the daily budget to ${symbol}${a.amount || 0}`;
     return K.actions(level)[a.type] || K.ACTIONS[a.type];
   };
-  /** The measured values that made a campaign match a rule, e.g. "ROAS 0.52x over 3 days". */
-  K.hitText = (rule, hit) => rule.conditions.map((cd, i) => `${K.METRICS[cd.metric].label} ${K.METRICS[cd.metric].fmt(hit.values[i].v)} over ${cd.window} ${cd.window === 1 ? 'day' : 'days'}`).join(', ');
+  /** The measured values that made a campaign match a rule, e.g. "ROAS 0.52x over 3 days (against 0.80x)". */
+  K.hitText = (rule, hit) => rule.conditions.map((cd, i) => {
+    const m = K.METRICS[cd.metric], x = hit.values[i], mm = cd.vs === 'metric' ? K.METRICS[cd.vsMetric || cd.metric] : m;
+    return `${m.label} ${m.fmt(x.v)} over ${days(cd.window)}` + (cd.vs && cd.vs !== 'value' && isFinite(x.target) ? ` (against ${mm.fmt(x.target)})` : '');
+  }).join(', ');
   K.ruleText = function (r) {
     const joiner = r.match === 'any' ? ' or ' : ' and ';
     const where = r.level && r.level !== 'campaign' ? `For each ${K.NOUN[r.level]}: when ` : 'When ';
