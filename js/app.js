@@ -57,9 +57,9 @@
 
   /* ---------- overview ---------- */
   function overview() {
-    const cs = visible(), n = range();
+    const cs = visible(), n = range(), lead = leadMode(cs);
     const cur = K.sum(cs.map((c) => K.agg(c.days, n))), prev = K.sum(cs.map((c) => K.agg(c.days, n, n)));
-    const tiles = ['spend', 'revenue', 'roas', 'cpa', 'ctr'].map((k) => `
+    const tiles = (lead ? ['spend', 'res', 'cpr', 'ctr', 'cpc'] : ['spend', 'revenue', 'roas', 'cpa', 'ctr']).map((k) => `
       <div class="tile"><div class="tile-label">${M[k].label}</div><div class="tile-value">${M[k].fmt(cur[k])}</div>${delta(cur[k], prev[k], M[k].goodWhen)}</div>`).join('');
     const on = K.state.rules.filter((r) => r.enabled);
     const pending = new Set(on.flatMap((r) => K.evaluate(r).map((h) => h.c.id))).size;
@@ -67,9 +67,10 @@
       <header class="view-head"><h1>Overview</h1><p class="muted">${live() ? esc(K.account.name) : 'Sample account'}, last ${n} days${K.state.platform === 'all' ? '' : ', ' + K.PLATFORMS[K.state.platform].name + ' only'}.</p></header>
       ${live() && !K.campaigns.length ? '<div class="panel"><p class="empty">This ad account has no active campaigns and no spend in the last 60 days.</p></div>' : ''}
       <section class="tiles">${tiles}</section>
+      ${lead && new Set(cs.map((c) => c.resultName).filter(Boolean)).size > 1 ? '<p class="hint mix">Results here add up different things (for example leads and profile visits), so the total and its cost are only a rough guide. Compare campaigns that share a result type.</p>' : ''}
       <section class="grid-2">
-        <div class="panel"><h2>Spend and revenue per day</h2><div id="ch-line"></div></div>
-        <div class="panel"><h2>Top campaigns by revenue</h2><div class="legend">${Object.entries(K.PLATFORMS).filter(([k]) => cs.some((c) => c.platform === k)).map(([, p]) => `<span><i style="background:${p.color}"></i>${p.name}</span>`).join('')}</div><div id="ch-bar"></div></div>
+        <div class="panel"><h2>${lead ? 'Spend per day' : 'Spend and revenue per day'}</h2><div id="ch-line"></div></div>
+        <div class="panel"><h2>Top campaigns by ${lead ? 'results' : 'revenue'}</h2><div class="legend">${Object.entries(K.PLATFORMS).filter(([k]) => cs.some((c) => c.platform === k)).map(([, p]) => `<span><i style="background:${p.color}"></i>${p.name}</span>`).join('')}</div><div id="ch-bar"></div></div>
       </section>
       <section class="grid-2">
         <div class="panel"><h2>Automations</h2>
@@ -83,22 +84,22 @@
       </section>`;
     const idx = Array.from({ length: n }, (_, i) => K.DAYS - n + i);
     K.lineChart($('#ch-line'), {
-      title: 'Spend and revenue per day', labels: idx.map(K.dayLabel), unit: '$', fmt: F.money,
-      series: [
-        { name: 'Revenue', color: 'var(--s1)', values: idx.map((i) => cs.reduce((s, c) => s + c.days[i].rev, 0)) },
-        { name: 'Spend', color: 'var(--s2)', values: idx.map((i) => cs.reduce((s, c) => s + c.days[i].spend, 0)) },
-      ],
+      title: lead ? 'Spend per day' : 'Spend and revenue per day', labels: idx.map(K.dayLabel), unit: '$', fmt: F.money,
+      series: (lead ? [] : [{ name: 'Revenue', color: 'var(--s1)', values: idx.map((i) => cs.reduce((s, c) => s + c.days[i].rev, 0)) }])
+        .concat([{ name: 'Spend', color: 'var(--s2)', values: idx.map((i) => cs.reduce((s, c) => s + c.days[i].spend, 0)) }]),
     });
     K.barChart($('#ch-bar'), {
-      metric: 'Revenue', fmt: F.money,
-      items: cs.map((c) => ({ label: c.name, value: K.agg(c.days, n).revenue, color: K.PLATFORMS[c.platform].color })).sort((a, b) => b.value - a.value).slice(0, 7),
+      metric: lead ? 'Results' : 'Revenue', fmt: lead ? F.int : F.money,
+      items: cs.map((c) => ({ label: c.name, value: K.agg(c.days, n)[lead ? 'res' : 'revenue'], color: K.PLATFORMS[c.platform].color })).sort((a, b) => b.value - a.value).slice(0, 7),
     });
   }
 
   /* ---------- campaigns ---------- */
-  const COLS = ['spend', 'revenue', 'roas', 'cpa', 'ctr', 'conv'];
+  /** True when none of these campaigns report purchases: a lead, message or engagement account. Its screens show results in place of purchases. */
+  const leadMode = (cs) => cs.length > 0 && cs.every((c) => c.noSales);
   function campaigns() {
     const n = range(), q = ui.q.toLowerCase();
+    const lead = leadMode(visible()), COLS = lead ? ['spend', 'res', 'cpr', 'ctr', 'cpc', 'clicks'] : ['spend', 'revenue', 'roas', 'cpa', 'ctr', 'conv'];
     const rows = visible().filter((c) => c.name.toLowerCase().includes(q)).map((c) => ({ c, m: K.agg(c.days, n) }));
     const k = ui.sort.key;
     rows.sort((a, b) => (k === 'name' ? a.c.name.localeCompare(b.c.name) : k === 'budget' ? a.c.budget - b.c.budget : a.m[k] - b.m[k]) * ui.sort.dir);
@@ -118,12 +119,12 @@
       </div>
       <div class="panel flush"><div class="table-wrap"><table class="data">
         <thead><tr><th><input type="checkbox" data-act="sel-all" aria-label="Select all" ${rows.length && rows.every((r) => ui.sel.has(r.c.id)) ? 'checked' : ''}></th><th>On</th>
-          ${th('name', 'Campaign', 'left')}${th('budget', 'Daily budget')}${COLS.map((c) => th(c, c === 'cpa' ? 'Cost / purchase' : M[c].label)).join('')}</tr></thead>
+          ${th('name', 'Campaign', 'left')}${th('budget', 'Daily budget')}${COLS.map((c) => th(c, c === 'cpa' ? 'Cost / purchase' : c === 'cpr' ? 'Cost / result' : M[c].label)).join('')}</tr></thead>
         <tbody>${rows.map(({ c, m }) => `
           <tr class="${c.status === 'paused' ? 'is-paused' : ''}">
             <td><input type="checkbox" data-act="sel" data-id="${c.id}" aria-label="Select ${esc(c.name)}" ${ui.sel.has(c.id) ? 'checked' : ''}></td>
             <td><button class="switch" role="switch" aria-checked="${c.status === 'active'}" data-act="toggle" data-id="${c.id}" aria-label="${esc(c.name)} is ${c.status}"></button></td>
-            <td class="left name">${pdot(c.platform)}${esc(c.name)}${c.status === 'paused' ? ' <span class="tag">Paused</span>' : ''}</td>
+            <td class="left name">${pdot(c.platform)}${esc(c.name)}${c.status === 'paused' ? ' <span class="tag">Paused</span>' : ''}${lead && c.resultName ? `<span class="result-type">${esc(c.resultName)}${c.noResults ? ', no figures from the platform' : ''}</span>` : lead && c.noResults ? '<span class="result-type">No result figures from the platform</span>' : ''}</td>
             <td>${c.noBudget ? `<span class="muted small">${esc(c.budgetNote || 'Set on ad sets')}</span>`
               : `<span class="budget">${esc(K.sym())}<input type="number" min="1" step="10" value="${c.budget}" data-budget="${c.id}" aria-label="Daily budget for ${esc(c.name)}"></span>`}</td>
             ${COLS.map((k2) => `<td>${M[k2].fmt(m[k2])}</td>`).join('')}
@@ -217,19 +218,26 @@
       const m = K.agg(a.days, n), recent = K.agg(a.days, 3).ctr, before = K.agg(a.days, 14, 3).ctr;
       return { a, m, drop: ((recent - before) / before) * 100 };
     });
-    const best = Math.max(...list.map((x) => x.m.roas));
-    list.sort((x, y) => (ui.cSort === 'fatigue' ? x.drop - y.drop : y.m[ui.cSort] - x.m[ui.cSort]));
+    // An account with no purchases ranks ads by results and cost per result instead of ROAS.
+    const lead = leadMode(list.map((x) => x.a.campaign));
+    const sortKey = lead && (ui.cSort === 'roas' || ui.cSort === 'conv') ? 'res' : ui.cSort;
+    const costs = list.map((x) => x.m.cpr).filter((v) => isFinite(v) && v > 0);
+    const best = lead ? Math.min(...costs) : Math.max(...list.map((x) => x.m.roas));
+    const isBest = (m) => (lead ? m.cpr === best : m.roas === best);
+    list.sort((x, y) => (sortKey === 'fatigue' ? x.drop - y.drop : sortKey === 'cpr' ? (isFinite(x.m.cpr) ? x.m.cpr : Infinity) - (isFinite(y.m.cpr) ? y.m.cpr : Infinity) : y.m[sortKey] - x.m[sortKey]));
+    const sorts = lead ? [['res', 'Results'], ['cpr', 'Lowest cost per result'], ['spend', 'Spend'], ['ctr', 'CTR'], ['fatigue', 'Most tired first']]
+      : [['roas', 'ROAS'], ['spend', 'Spend'], ['ctr', 'CTR'], ['conv', 'Purchases'], ['fatigue', 'Most tired first']];
     main.innerHTML = `
       <header class="view-head"><h1>Creatives</h1><p class="muted">Which ads earn their spend, and which are wearing out. Tired means click rate fell more than 20% against the two weeks before.</p></header>
-      <div class="toolbar"><label>Sort by <select id="csort">${opt([['roas', 'ROAS'], ['spend', 'Spend'], ['ctr', 'CTR'], ['conv', 'Purchases'], ['fatigue', 'Most tired first']], ui.cSort)}</select></label></div>
+      <div class="toolbar"><label>Sort by <select id="csort">${opt(sorts, sortKey)}</select></label></div>
       <div class="creative-grid">${list.map(({ a, m, drop }) => `
         <article class="creative">
           <div class="thumb" style="--h:${a.hue}">${a.thumb ? `<img src="${esc(a.thumb)}" alt="" loading="lazy">` : `<span class="hook">${esc(a.name)}</span>`}<span class="format">${esc(a.format)}</span></div>
           <div class="creative-body">
             <h3>${esc(a.name)}</h3>
             <p class="muted small">${pdot(a.campaign.platform)}${esc(a.campaign.name)}</p>
-            <p class="badges">${m.roas === best ? '<span class="badge good">★ Best ROAS</span>' : ''}${drop < -20 ? `<span class="badge warn">▼ Tired, CTR down ${Math.abs(drop).toFixed(0)}%</span>` : ''}</p>
-            <dl><div><dt>ROAS</dt><dd>${F.x(m.roas)}</dd></div><div><dt>Spend</dt><dd>${F.money(m.spend)}</dd></div><div><dt>CTR</dt><dd>${F.pct(m.ctr)}</dd></div><div><dt>Purchases</dt><dd>${F.int(m.conv)}</dd></div></dl>
+            <p class="badges">${isBest(m) ? `<span class="badge good">★ ${lead ? 'Lowest cost per result' : 'Best ROAS'}</span>` : ''}${drop < -20 ? `<span class="badge warn">▼ Tired, CTR down ${Math.abs(drop).toFixed(0)}%</span>` : ''}</p>
+            <dl>${lead ? `<div><dt>Cost per result</dt><dd>${F.money2(m.cpr)}</dd></div>` : `<div><dt>ROAS</dt><dd>${F.x(m.roas)}</dd></div>`}<div><dt>Spend</dt><dd>${F.money(m.spend)}</dd></div><div><dt>CTR</dt><dd>${F.pct(m.ctr)}</dd></div>${lead ? `<div><dt>${esc(a.campaign.resultName || 'Results')}</dt><dd>${F.int(m.res)}</dd></div>` : `<div><dt>Purchases</dt><dd>${F.int(m.conv)}</dd></div>`}</dl>
           </div>
         </article>`).join('')}</div>
       ${list.length ? '' : '<div class="panel"><p class="empty">No ads with spend in the last 30 days.</p></div>'}`;
@@ -241,8 +249,8 @@
     if (ui.rGroup === 'campaign') return cs.map((c) => ({ label: c.name, color: K.PLATFORMS[c.platform].color, m: K.agg(c.days, n) }));
     if (ui.rGroup === 'platform') return Object.entries(K.PLATFORMS).map(([k, p]) => ({ label: p.name, color: p.color, m: K.sum(cs.filter((c) => c.platform === k).map((c) => K.agg(c.days, n))) })).filter((r) => r.m.spend > 0);
     return Array.from({ length: n }, (_, j) => {
-      const i = K.DAYS - n + j, t = { spend: 0, impr: 0, clicks: 0, revenue: 0, conv: 0 };
-      cs.forEach((c) => { const d = c.days[i]; t.spend += d.spend; t.impr += d.impr; t.clicks += d.clicks; t.revenue += d.rev; t.conv += d.conv; });
+      const i = K.DAYS - n + j, t = { spend: 0, impr: 0, clicks: 0, revenue: 0, conv: 0, res: 0 };
+      cs.forEach((c) => { const d = c.days[i]; t.spend += d.spend; t.impr += d.impr; t.clicks += d.clicks; t.revenue += d.rev; t.conv += d.conv; t.res += d.res != null ? d.res : d.conv; });
       return { label: K.dayLabel(i), color: 'var(--s1)', m: K.derive(t) };
     });
   }

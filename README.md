@@ -152,6 +152,29 @@ What to know:
   budgets set on ad groups are shown but not changed.
 - The Creatives screen lists Pinterest ads by name or Pin number, without previews.
 
+## Results and cost per result
+
+Not every account sells online. For lead, message and engagement campaigns there are no
+purchases, so ROAS and cost per purchase are empty. Kestrel therefore also tracks **Results**
+and **Cost per result**, which can be used in rules, reports and exports like any other metric.
+
+- On **Meta**, a result is what each campaign is set up to get, as in Ads Manager: leads,
+  messaging conversations, profile visits, purchases and so on. The campaign table names the
+  result type under each campaign.
+- On **Google Ads, TikTok, Snapchat and Pinterest**, a result is the same as a purchase or
+  conversion for now.
+- When none of the campaigns on screen report purchases, the Overview, Campaigns and
+  Creatives screens switch to results automatically: Results and Cost per result replace
+  Revenue, ROAS and Purchases.
+- Rule templates for these accounts: "Pause expensive results", "Scale cheap results" and
+  "Rising cost per result alert". Set the amounts to suit your own cost per result.
+- If a campaign spent money but the platform gives no result figures for it (Meta does not
+  report some messaging results, for example), Kestrel treats its results as unknown, not
+  zero. Result-based rules skip it and the campaign table says so. A campaign that truly got
+  no results in 60 days is treated the same way, so use a spend or click-rate rule for those.
+- Totals that add up different result types (leads plus profile visits) are only a rough
+  guide; the Overview says so when that happens.
+
 ## Alerts and notifications
 
 A rule whose action is "send me an alert" changes nothing. It records which campaigns matched

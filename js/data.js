@@ -51,6 +51,8 @@
     cpc: { label: 'CPC', fmt: K.fmt.money2, unit: '$', goodWhen: 'down' },
     cpm: { label: 'CPM', fmt: K.fmt.money2, unit: '$', goodWhen: 'down' },
     conv: { label: 'Purchases', fmt: K.fmt.int, unit: '', goodWhen: 'up' },
+    res: { label: 'Results', fmt: K.fmt.int, unit: '', goodWhen: 'up' },
+    cpr: { label: 'Cost per result', fmt: K.fmt.money2, unit: '$', goodWhen: 'down' },
     impr: { label: 'Impressions', fmt: K.fmt.int, unit: '' },
     clicks: { label: 'Clicks', fmt: K.fmt.int, unit: '' },
   };
@@ -112,20 +114,21 @@
   /** Totals and derived metrics for `n` days, ending `offset` days before today. */
   K.agg = function (days, n, offset) {
     offset = offset || 0;
-    const t = { spend: 0, impr: 0, clicks: 0, revenue: 0, conv: 0 };
+    const t = { spend: 0, impr: 0, clicks: 0, revenue: 0, conv: 0, res: 0 };
     for (let i = DAYS - n - offset; i < DAYS - offset; i++) {
       const d = days[i];
-      t.spend += d.spend; t.impr += d.impr; t.clicks += d.clicks; t.revenue += d.rev; t.conv += d.conv;
+      t.spend += d.spend; t.impr += d.impr; t.clicks += d.clicks; t.revenue += d.rev; t.conv += d.conv; t.res += d.res != null ? d.res : d.conv;
     }
     return K.derive(t);
   };
   K.derive = function (t) {
+    t.cpr = t.spend / t.res; // a result is whatever the campaign is set up to get: a lead, a message, a purchase
     t.roas = t.revenue / t.spend; t.cpa = t.spend / t.conv; t.ctr = (t.clicks / t.impr) * 100;
     t.cpc = t.spend / t.clicks; t.cpm = (t.spend / t.impr) * 1000;
     return t;
   };
   K.sum = function (list) {
-    const t = { spend: 0, impr: 0, clicks: 0, revenue: 0, conv: 0 };
+    const t = { spend: 0, impr: 0, clicks: 0, revenue: 0, conv: 0, res: 0 };
     list.forEach((m) => { for (const k in t) t[k] += m[k]; });
     return K.derive(t);
   };
@@ -180,6 +183,16 @@
     { name: 'Bring back recovered campaigns', platform: 'all', match: 'all', freq: 'day',
       conditions: [{ metric: 'roas', op: 'gt', value: 2.5, window: 14 }],
       action: { type: 'activate', pct: 20, cap: 0 } },
+    // For lead, message and engagement campaigns, where there are results but no purchases.
+    { name: 'Pause expensive results', platform: 'all', match: 'all', freq: 'day',
+      conditions: [{ metric: 'cpr', op: 'gt', value: 50, window: 7 }, { metric: 'spend', op: 'gt', value: 200, window: 7 }],
+      action: { type: 'pause', pct: 20, cap: 0 } },
+    { name: 'Scale cheap results', platform: 'all', match: 'all', freq: 'day',
+      conditions: [{ metric: 'cpr', op: 'lt', value: 20, window: 7 }, { metric: 'res', op: 'gt', value: 10, window: 7 }],
+      action: { type: 'inc', pct: 20, cap: 1500 } },
+    { name: 'Rising cost per result alert', platform: 'all', match: 'all', freq: 'day',
+      conditions: [{ metric: 'cpr', op: 'gt', value: 40, window: 3 }],
+      action: { type: 'notify', pct: 20, cap: 0 } },
   ];
 
   K.newRule = function (tpl) {
@@ -199,6 +212,8 @@
           const v = K.agg(c.days, cd.window)[cd.metric];
           // A campaign whose platform returned no purchase data never matches a purchase-based condition.
           if (c.noSales && ['roas', 'revenue', 'cpa', 'conv'].includes(cd.metric)) return { v: NaN, hit: false };
+          // Likewise for results the platform does not report for this campaign.
+          if (c.noResults && ['res', 'cpr'].includes(cd.metric)) return { v: NaN, hit: false };
           return { v, hit: cd.op === 'lt' ? v < cd.value : v > cd.value };
         });
         const hit = rule.match === 'any' ? values.some((x) => x.hit) : values.every((x) => x.hit);
@@ -274,8 +289,15 @@
       const blind = sum('spend') > 0 && sum('conv') === 0 && sum('rev') === 0;
       if (blind) data.campaigns.forEach((c) => { c.noSales = true; });
       s.note = blind || data.campaigns.some((c) => c.noSales)
-        ? `${s.label} reported no purchases for the last ${DAYS} days, so purchase tracking looks missing. Purchases, revenue and ROAS are empty for its campaigns, and rules that depend on them skip those campaigns.`
+        ? `${s.label} reported no purchases for the last ${DAYS} days. If this account sells online, purchase tracking looks missing; if it runs lead, message or engagement campaigns, use Results and Cost per result instead. Rules based on purchases, revenue or ROAS skip its campaigns.`
         : '';
+      // The same care for results: a campaign that spent money but shows no results at all may
+      // simply have results the platform does not report (some messaging results, for example).
+      // Treating that as "cost per result is infinite" would pause it, so result-based rules skip it.
+      data.campaigns.forEach((c) => {
+        const total = (k) => c.days.reduce((m, d) => m + (k === 'res' ? (d.res != null ? d.res : d.conv) : d[k]), 0);
+        if (c.noResults === undefined) c.noResults = total('spend') > 0 && total('res') === 0;
+      });
     });
     K.campaigns = parts.flatMap((p) => p.campaigns);
     K.creatives = parts.flatMap((p) => p.creatives).sort((a, b) => b.spent - a.spent).slice(0, 60);

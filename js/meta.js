@@ -66,25 +66,61 @@
     return list.map((a) => ({ id: a.account_id, name: a.name || 'Ad account ' + a.account_id, currency: a.currency || 'USD', active: a.account_status === 1 }));
   };
 
+  /** Turns Meta's result indicator, such as "actions:onsite_conversion.messaging_conversation_started_7d", into words. */
+  function resultName(indicator) {
+    const key = String(indicator).replace(/^actions:/, '').split('.').pop();
+    const known = { lead: 'Leads', lead_grouped: 'Leads', messaging_conversation_started_7d: 'Messaging conversations', total_profile_visits: 'Profile visits',
+      link_click: 'Link clicks', landing_page_view: 'Landing page views', post_engagement: 'Post engagements', omni_purchase: 'Purchases', purchase: 'Purchases',
+      fb_pixel_purchase: 'Purchases', video_thruplay_watched_actions: 'ThruPlays', reach: 'Reach', like: 'Page likes', mobile_app_install: 'App installs' };
+    if (known[key]) return known[key];
+    const words = key.replace(/_/g, ' ').trim();
+    return words ? words[0].toUpperCase() + words.slice(1) : '';
+  }
+
   /** Reads campaigns, 60 days of daily results and ads. */
   M.fetch = async function () {
     const act = 'act_' + M.conn.account.id, until = K.isoDay(-1), since = K.isoDay(-K.DAYS);
     const status = '["ACTIVE","PAUSED"]';
     const metrics = 'spend,impressions,clicks,actions,action_values';
-    const [camps, rows, ads, adRows] = await Promise.all([
-      all(act + '/campaigns', { fields: 'id,name,status,daily_budget,objective', effective_status: status, limit: 200 }),
-      all(act + '/insights', { level: 'campaign', time_increment: 1, time_range: JSON.stringify({ since, until }), fields: 'campaign_id,' + metrics, limit: 500 }),
+    const range = (from) => JSON.stringify({ since: from, until });
+    const insights = (level, from, fields) => all(act + '/insights', { level, time_increment: 1, time_range: range(from), fields, limit: 500 });
+    // "Results" is Meta's own count of whatever each campaign is set up to get (leads, messages,
+    // purchases, profile visits). It is asked for separately so that, if it is unavailable, the
+    // rest still loads and results fall back to purchases.
+    const [camps, rows, ads, adRows, resRows, adResRows] = await Promise.all([
+      all(act + '/campaigns', { fields: 'id,name,status,daily_budget,lifetime_budget,objective', effective_status: status, limit: 200 }),
+      insights('campaign', since, 'campaign_id,' + metrics),
       all(act + '/ads', { fields: 'id,name,campaign_id,creative{thumbnail_url,object_type}', effective_status: status, limit: 200 }).catch(() => []),
-      all(act + '/insights', { level: 'ad', time_increment: 1, time_range: JSON.stringify({ since: K.isoDay(-30), until }), fields: 'ad_id,' + metrics, limit: 500 }).catch(() => []),
+      insights('ad', K.isoDay(-30), 'ad_id,' + metrics).catch(() => []),
+      insights('campaign', since, 'campaign_id,results').catch(() => null),
+      insights('ad', K.isoDay(-30), 'ad_id,results').catch(() => null),
     ]);
     const f = factor();
     const byId = {};
     camps.forEach((c) => {
       const has = c.daily_budget != null && c.daily_budget !== '';
       byId[c.id] = { id: c.id, name: c.name, platform: 'meta', status: c.status === 'ACTIVE' ? 'active' : 'paused',
-        budget: has ? Math.round(parseFloat(c.daily_budget) / f) : 0, noBudget: !has, days: K.blankDays(), spent: 0 };
+        budget: has ? Math.round(parseFloat(c.daily_budget) / f) : 0, noBudget: !has, budgetNote: c.lifetime_budget ? 'Lifetime budget' : 'Set on ad sets', days: K.blankDays(), spent: 0 };
     });
-    rows.forEach((r) => { const c = byId[r.campaign_id]; if (c) { K.fillDay(c.days, r.date_start, until, day(r)); c.spent += parseFloat(r.spend) || 0; } });
+    // results by "<id>|<date>", plus what each entity's result is and whether Meta gave a number for it
+    const index = (list, idKey) => {
+      if (!list) return null;
+      const map = {}, seen = {};
+      list.forEach((r) => {
+        const x = [].concat(r.results || [])[0]; if (!x) return;
+        const v = parseFloat(x.values ? (x.values[0] || {}).value : x.value), s = seen[r[idKey]] || (seen[r[idKey]] = { indicator: x.indicator || '', numeric: false });
+        if (isFinite(v)) { map[r[idKey] + '|' + r.date_start] = v; s.numeric = true; }
+      });
+      return { map, seen };
+    };
+    const res = index(resRows, 'campaign_id'), adRes = index(adResRows, 'ad_id');
+    const withRes = (idx, id, r) => { const d = day(r); if (idx) d.res = idx.map[id + '|' + r.date_start] || 0; return d; };
+    rows.forEach((r) => { const c = byId[r.campaign_id]; if (c) { K.fillDay(c.days, r.date_start, until, withRes(res, r.campaign_id, r)); c.spent += parseFloat(r.spend) || 0; } });
+    if (res) Object.keys(byId).forEach((id) => {
+      const s = res.seen[id]; if (!s) return;
+      byId[id].resultName = resultName(s.indicator);
+      if (!s.numeric) byId[id].noResults = true; // Meta names the result but gives no number (some messaging results in Europe, for example)
+    });
     const adById = {};
     ads.forEach((a, k) => {
       const c = byId[a.campaign_id]; if (!c) return;
@@ -92,7 +128,7 @@
       adById[a.id] = { id: a.id, name: a.name, campaign: c, format: type === 'VIDEO' ? 'Video' : type === 'PHOTO' ? 'Image' : 'Ad',
         hue: (k * 47) % 360, thumb: (a.creative && a.creative.thumbnail_url) || '', days: K.blankDays(), spent: 0 };
     });
-    adRows.forEach((r) => { const a = adById[r.ad_id]; if (a) { K.fillDay(a.days, r.date_start, until, day(r)); a.spent += parseFloat(r.spend) || 0; } });
+    adRows.forEach((r) => { const a = adById[r.ad_id]; if (a) { K.fillDay(a.days, r.date_start, until, withRes(adRes, r.ad_id, r)); a.spent += parseFloat(r.spend) || 0; } });
     return {
       campaigns: Object.values(byId).filter((c) => c.status === 'active' || c.spent > 0),
       creatives: Object.values(adById).filter((a) => a.spent > 0),
