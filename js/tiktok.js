@@ -89,7 +89,7 @@
       report('AUCTION_CAMPAIGN', 'campaign_id', ['spend', 'complete_payment', 'complete_payment_roas'], K.DAYS).catch(() => null),
       report('AUCTION_AD', 'ad_id', ['spend', 'impressions', 'clicks', 'complete_payment', 'complete_payment_roas', 'ad_name', 'campaign_id'], 30).catch(() => []),
     ]);
-    T.note = sales ? '' : 'TikTok did not return purchase figures, so purchases, revenue and ROAS are empty for TikTok campaigns and rules that depend on them skip those campaigns.';
+    // K.loadLive turns noSales campaigns into a note for the Connection screen.
     const date = (r) => String(r.dimensions.stat_time_day).slice(0, 10);
     const byId = {};
     camps.forEach((c) => {

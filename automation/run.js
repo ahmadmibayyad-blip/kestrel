@@ -137,6 +137,7 @@ async function main(env, now) {
   say(`Loaded ${K.campaigns.length} campaigns from ${K.account.name}.`);
   let failed = K.liveErrors.length;
   K.liveErrors.forEach((e) => say('Could not load ' + e));
+  K.connected().forEach((s) => { if (s.note) say('Note: ' + s.note); });
 
   const label = (c) => `${K.sources[c.platform].label} ` + (names ? `"${c.name}"` : 'campaign …' + String(c.id).slice(-4));
   for (const rule of due) {
@@ -147,7 +148,7 @@ async function main(env, now) {
       const r = await K.run(rule);
       failed += r.failed;
       K.state.log.slice(0, K.state.log.length - before).reverse().forEach((e) => {
-        const c = K.campaigns.find((x) => x.name === e.campaign);
+        const c = K.campaigns.find((x) => x.id === e.cid);
         say(`  ${c ? label(c) : 'campaign'}: ${e.text}`);
       });
     } else {

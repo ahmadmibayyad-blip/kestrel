@@ -172,3 +172,4 @@ details.alt { margin: 0 0 14px; }
 details.alt summary { cursor: pointer; color: var(--muted); font-size: 0.875rem; margin-bottom: 10px; }
 details.alt .field { display: grid; gap: 4px; font-size: 0.875rem; color: var(--muted); max-width: 560px; }
 details.alt .field input { border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--panel); padding: 9px 10px; color: var(--ink); font-size: 1rem; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

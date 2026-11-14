@@ -41,8 +41,18 @@
     const cls = !goodWhen || Math.abs(d) < 0.5 ? 'flat' : (goodWhen === 'up') === up ? 'good' : 'bad';
     return `<span class="delta ${cls}">${up ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}% <span class="vs">vs previous ${range()} days</span></span>`;
   }
-  function logRows(list) {
-    return list.map((e) => `<tr><td class="muted nowrap">${ago(e.t)}</td><td>${esc(e.campaign)}</td><td>${esc(e.text)}</td><td class="muted">${esc(e.source)}</td></tr>`).join('');
+  const notes = () => K.connected().map((s) => s.note).filter(Boolean);
+  /** With `undoable`, each row gets an Undo button when the change can still be reversed. */
+  function logRows(list, undoable) {
+    return list.map((e) => {
+      let last = '';
+      if (undoable) {
+        last = e.undone ? '<td class="muted">Undone</td>'
+          : e.undo && !K.undoBlocker(e) ? `<td><button class="btn sm" data-act="undo" data-t="${e.t}" data-cid="${esc(e.cid)}" aria-label="Undo: ${esc(e.text)} on ${esc(e.campaign)}">Undo</button></td>`
+          : '<td></td>';
+      }
+      return `<tr><td class="muted nowrap">${ago(e.t)}</td><td>${esc(e.campaign)}</td><td>${esc(e.text)}</td><td class="muted">${esc(e.source)}</td>${last}</tr>`;
+    }).join('');
   }
 
   /* ---------- overview ---------- */
@@ -185,6 +195,7 @@
           : 'On. Rules run at their own interval as long as this tab stays open.'}
           To run them with no browser open, use the scheduler described in the README.</span>
       </div>
+      ${notes().map((n) => `<p class="warn">${esc(n)}</p>`).join("")}
       <div class="rules-layout">
         <ul class="rule-list">${K.state.rules.map((r) => {
           const hits = r.enabled ? K.evaluate(r).length : 0;
@@ -266,7 +277,7 @@
   function activity() {
     main.innerHTML = `
       <header class="view-head"><h1>Activity</h1><p class="muted">Every change made to a campaign, by a rule or by hand.</p></header>
-      ${K.state.log.length ? `<div class="panel flush"><div class="table-wrap"><table class="data"><thead><tr><th class="left">When</th><th class="left">Campaign</th><th class="left">Change</th><th class="left">Made by</th></tr></thead><tbody class="left-all">${logRows(K.state.log)}</tbody></table></div></div>`
+      ${K.state.log.length ? `<div class="panel flush"><div class="table-wrap"><table class="data"><thead><tr><th class="left">When</th><th class="left">Campaign</th><th class="left">Change</th><th class="left">Made by</th><th class="left"><span class="sr">Undo</span></th></tr></thead><tbody class="left-all">${logRows(K.state.log, true)}</tbody></table></div></div>`
         : '<div class="panel"><p class="empty">No changes yet. Run a rule from Automations, or edit a campaign, and it shows up here.</p></div>'}
       <p><button class="btn ghost danger" data-act="reset">${live() ? 'Clear the rules and log for this account' : 'Reset the demo data'}</button></p>`;
   }
@@ -326,7 +337,7 @@
   function tiktokPanel() {
     const s = K.tiktok, t = ui.tik;
     if (s.conn) return `<div class="panel"><h2>TikTok Ads: connected to ${esc(s.conn.account.name)}</h2>
-      <p class="muted">Advertiser ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}.</p>${s.note ? `<p class="warn">${esc(s.note)}</p>` : ''}${allowRow(s)}
+      <p class="muted">Advertiser ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}.</p>${allowRow(s)}
       <p><button class="btn ghost danger" data-act="disconnect" data-src="tiktok">Disconnect TikTok Ads</button></p></div>`;
     return `<div class="panel"><h2>Connect a TikTok Ads account</h2>
       <ol class="how">
@@ -403,6 +414,7 @@
     const currencies = [...new Set(list.map((s) => s.conn.account.currency))];
     main.innerHTML = head + `
       ${problems.map((p) => `<div class="panel error" role="alert"><b>Could not load.</b> ${esc(p)}</div>`).join('')}
+      ${notes().map((n) => `<div class="panel"><p class="warn">${esc(n)}</p></div>`).join("")}
       ${live() ? `<div class="panel"><h2>Showing ${esc(K.account.name)}</h2>
         <p>${K.campaigns.length} campaigns and the last ${K.DAYS} days of results, loaded ${ago(K.loadedAt)}.</p>
         ${currencies.length > 1 ? `<p class="warn">These accounts use different currencies (${esc(currencies.join(', '))}). Amounts are not converted, so totals across platforms are not reliable. Filter by platform to read them correctly.</p>` : ''}
@@ -476,7 +488,7 @@
     else if (act === 'toggle') {
       const to = c.status === 'active' ? 'paused' : 'active';
       if (blocked(c) || !sure(`${to === 'paused' ? 'Pause' : 'Turn on'} "${c.name}"?`)) return;
-      await K.applyStatus(c, to); K.log('You', c.name, to === 'active' ? 'Turned back on' : 'Paused'); K.save();
+      await K.changeStatus(c, to, 'You'); K.save();
     }
     else if (act === 'sel') { el.checked ? ui.sel.add(id) : ui.sel.delete(id); }
     else if (act === 'sel-all') { ui.sel = new Set(el.checked ? visible().filter((x) => x.name.toLowerCase().includes(ui.q.toLowerCase())).map((x) => x.id) : []); }
@@ -487,13 +499,13 @@
       for (const x of K.campaigns.filter((y) => ui.sel.has(y.id))) {
         if (!K.canWrite(x)) { r.skipped++; continue; }
         try {
-          if (op === 'pause' && x.status === 'active') { await K.applyStatus(x, 'paused'); K.log('You', x.name, 'Paused'); r.changed++; }
-          else if (op === 'activate' && x.status === 'paused') { await K.applyStatus(x, 'active'); K.log('You', x.name, 'Turned back on'); r.changed++; }
+          if (op === 'pause' && x.status === 'active') { await K.changeStatus(x, 'paused', 'You'); r.changed++; }
+          else if (op === 'activate' && x.status === 'paused') { await K.changeStatus(x, 'active', 'You'); r.changed++; }
           else if ((op === 'up' || op === 'down') && !x.noBudget) {
             const from = x.budget, b = Math.max(1, Math.round(from * (op === 'up' ? 1.1 : 0.9)));
-            await K.applyBudget(x, b); K.log('You', x.name, `Daily budget ${F.money(from)} to ${F.money(b)}`); r.changed++;
+            await K.changeBudget(x, b, 'You'); r.changed++;
           }
-        } catch (err) { r.failed++; K.log('You', x.name, 'Failed: ' + err.message); }
+        } catch (err) { r.failed++; K.log('You', x.name, 'Failed: ' + err.message, { cid: x.id }); }
       }
       K.save(); toast(summary('Bulk edit', r));
     }
@@ -513,6 +525,16 @@
     }
     else if (act === 'del-rule') { K.state.rules = K.state.rules.filter((x) => x.id !== ui.draft.id); toast(`Deleted "${ui.draft.name}"`); ui.draft = null; K.save(); }
     else if (act === 'csv') return csv();
+    else if (act === 'undo') {
+      const entry = K.state.log.find((e) => String(e.t) === el.dataset.t && e.cid === el.dataset.cid);
+      if (!entry) return;
+      const why = K.undoBlocker(entry);
+      if (why) { toast(why); return; }
+      const camp = K.campaigns.find((x) => x.id === entry.cid);
+      if (blocked(camp) || !sure(`Undo "${entry.text}" on "${camp.name}"?`)) return;
+      await K.undo(entry);
+      toast(`Undone on "${camp.name}"`);
+    }
     else if (act === 'toggle-auto') {
       if (!K.state.auto && live() && !window.confirm('Run rules automatically while this page is open?\n\nRules that are on will change your live ad accounts without asking each time.')) return;
       K.state.auto = !K.state.auto; K.save();
@@ -636,8 +658,8 @@
     else if (t.dataset.budget) {
       const c = K.campaigns.find((x) => x.id === t.dataset.budget), from = c.budget, b = Math.max(1, Math.round(+t.value || from));
       if (b === from || blocked(c) || !sure(`Change the daily budget of "${c.name}" from ${F.money(from)} to ${F.money(b)}?`)) { render(); return; }
-      K.applyBudget(c, b)
-        .then(() => { K.log('You', c.name, `Daily budget ${F.money(from)} to ${F.money(b)}`); K.save(); toast('Budget updated'); })
+      K.changeBudget(c, b, 'You')
+        .then(() => { K.save(); toast('Budget updated'); })
         .catch((err) => toast(err.message))
         .then(render);
     }

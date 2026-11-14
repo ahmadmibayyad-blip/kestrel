@@ -152,6 +152,21 @@ What to know:
   budgets set on ad groups are shown but not changed.
 - The Creatives screen lists Pinterest ads by name or Pin number, without previews.
 
+## Safety
+
+- **Read-only by default.** Each connected account starts read-only and is allowed to change
+  on its own switch. On a live account every manual change asks for confirmation.
+- **Undo.** The Activity screen has an Undo button next to each pause, restart and budget
+  change, whether a rule or a person made it. Undo puts the campaign back as it was and is
+  logged too. It is refused if the campaign has changed again since, so it never overwrites a
+  newer change. Undo works from the browser that made the change; changes made by the
+  scheduler are in the Actions log, not in the app's Activity screen.
+- **Missing purchase tracking.** If an account spent money in the last 60 days but reports no
+  purchases at all, Kestrel treats its purchase data as missing, not as zero. Rules based on
+  purchases, revenue, ROAS or cost per purchase skip that account's campaigns, and the
+  Connection and Automations screens say so. This check is per account: a single campaign
+  with no purchases in an account that has some still counts as zero.
+
 ## Run rules automatically
 
 There are two ways. Both run each enabled rule at its own "check every" interval.

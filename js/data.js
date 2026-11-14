@@ -235,9 +235,12 @@
     return `When ${r.conditions.map(K.conditionText).join(joiner)}, ${K.actionText(r.action)}.`;
   };
 
-  K.log = function (source, campaign, text) {
-    K.state.log.unshift({ t: Date.now(), source, campaign, text });
+  /* `extra` may carry cid (the campaign's id) and undo ({ kind, from, to }) so the change can be reversed. */
+  K.log = function (source, campaign, text, extra) {
+    const entry = Object.assign({ t: Date.now(), source, campaign, text }, extra);
+    K.state.log.unshift(entry);
     if (K.state.log.length > 200) K.state.log.length = 200;
+    return entry;
   };
 
   /* Live ad accounts. Each source (js/meta.js, js/google.js) registers itself here under its
@@ -261,6 +264,17 @@
     K.mode = 'live';
     K.account = { name: list.map((s) => s.conn.account.name).join(' + '), currency: list[0].conn.account.currency };
     K.setCurrency(K.account.currency);
+    // An account that spent money but reports no purchases at all almost certainly has no purchase
+    // tracking. Reading that as "ROAS is zero" would let a low-ROAS rule pause everything, so its
+    // campaigns are marked and purchase-based conditions never match them (see K.evaluate).
+    good.forEach(({ s, data }) => {
+      const sum = (k) => data.campaigns.reduce((n, c) => n + c.days.reduce((m, d) => m + d[k], 0), 0);
+      const blind = sum('spend') > 0 && sum('conv') === 0 && sum('rev') === 0;
+      if (blind) data.campaigns.forEach((c) => { c.noSales = true; });
+      s.note = blind || data.campaigns.some((c) => c.noSales)
+        ? `${s.label} reported no purchases for the last ${DAYS} days, so purchase tracking looks missing. Purchases, revenue and ROAS are empty for its campaigns, and rules that depend on them skip those campaigns.`
+        : '';
+    });
     K.campaigns = parts.flatMap((p) => p.campaigns);
     K.creatives = parts.flatMap((p) => p.creatives).sort((a, b) => b.spent - a.spent).slice(0, 60);
     K.loadState();
@@ -282,16 +296,48 @@
       const a = rule.action;
       if (a.type !== 'notify' && !K.canWrite(c)) { skipped++; continue; }
       try {
-        if (a.type === 'pause') { await K.applyStatus(c, 'paused'); K.log(rule.name, c.name, 'Paused'); }
-        else if (a.type === 'activate') { await K.applyStatus(c, 'active'); K.log(rule.name, c.name, 'Turned back on'); }
-        else if (a.type === 'notify') { K.log(rule.name, c.name, 'Alert sent'); }
-        else { const from = c.budget, b = K.nextBudget(c, a); await K.applyBudget(c, b); K.log(rule.name, c.name, `Daily budget ${K.fmt.money(from)} to ${K.fmt.money(b)}`); }
+        if (a.type === 'pause') await K.changeStatus(c, 'paused', rule.name);
+        else if (a.type === 'activate') await K.changeStatus(c, 'active', rule.name);
+        else if (a.type === 'notify') K.log(rule.name, c.name, 'Alert sent', { cid: c.id });
+        else await K.changeBudget(c, K.nextBudget(c, a), rule.name);
         changed++;
-      } catch (e) { failed++; K.log(rule.name, c.name, 'Failed: ' + e.message); }
+      } catch (e) { failed++; K.log(rule.name, c.name, 'Failed: ' + e.message, { cid: c.id }); }
     }
     rule.runs += 1; rule.lastRun = Date.now();
     K.save();
     return { changed, failed, skipped };
+  };
+
+  /* Every change to a campaign goes through these two, so each one is logged with what it
+     replaced and can be undone from the Activity screen. */
+  K.changeStatus = async function (c, to, source) {
+    const from = c.status;
+    await K.applyStatus(c, to);
+    return K.log(source, c.name, to === 'active' ? 'Turned back on' : 'Paused', { cid: c.id, undo: { kind: 'status', from, to } });
+  };
+  K.changeBudget = async function (c, to, source) {
+    const from = c.budget;
+    await K.applyBudget(c, to);
+    return K.log(source, c.name, `Daily budget ${K.fmt.money(from)} to ${K.fmt.money(to)}`, { cid: c.id, undo: { kind: 'budget', from, to } });
+  };
+  /** Why a logged change cannot be undone right now, or '' if it can. */
+  K.undoBlocker = function (entry) {
+    if (!entry.undo || entry.undone) return 'Nothing to undo.';
+    const c = K.campaigns.find((x) => x.id === entry.cid);
+    if (!c) return 'That campaign is not in the account shown now.';
+    const now = entry.undo.kind === 'status' ? c.status : c.budget;
+    if (now !== entry.undo.to) return 'The campaign has changed again since then, so undoing would overwrite a newer change.';
+    return '';
+  };
+  /** Puts a campaign back to what it was before a logged change. */
+  K.undo = async function (entry) {
+    const why = K.undoBlocker(entry);
+    if (why) throw new Error(why);
+    const c = K.campaigns.find((x) => x.id === entry.cid), u = entry.undo;
+    if (u.kind === 'status') await K.applyStatus(c, u.from); else await K.applyBudget(c, u.from);
+    entry.undone = true;
+    K.log('You (undo)', c.name, u.kind === 'status' ? (u.from === 'active' ? 'Turned back on' : 'Paused') : `Daily budget ${K.fmt.money(u.to)} back to ${K.fmt.money(u.from)}`, { cid: c.id });
+    K.save();
   };
 
   /* ---------- persistence (per browser; the page works without it) ---------- */
