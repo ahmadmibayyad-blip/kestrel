@@ -1,0 +1,9 @@
+{
+  "name": "kestrel-tiktok-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Relays Kestrel's browser requests to the TikTok Marketing API.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

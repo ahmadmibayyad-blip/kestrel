@@ -84,13 +84,15 @@ alongside Meta and Google Ads.
 1. In TikTok for Business Developers, create an app and request the Ads Management and
    Reporting permissions. TikTok reviews new apps before they can be used.
 2. Authorise the app for your ad account and copy the access token it gives you.
-3. In the app, go to Connection, paste the token and the advertiser ID, and connect.
+3. Set up the relay in [`relay/`](relay/README.md) and copy its address.
+4. In the app, go to Connection, paste the token, the advertiser ID and the relay address,
+   and connect.
 
 What to know:
 
-- It is not confirmed that TikTok accepts requests from a web page. If it does not, the
-  Connection screen says it could not reach TikTok from the browser. The scheduler below runs
-  outside the browser and is not affected, so TikTok rules can still run there.
+- TikTok's API refuses requests sent from a web page, so the app reaches it through the
+  relay, a small server you host (the relay's README covers hosting it on Apify). The
+  scheduler below runs outside the browser and calls TikTok directly, with no relay.
 - "Purchases" and revenue for TikTok campaigns are complete-payment events from your TikTok
   pixel. If TikTok returns no purchase figures, those columns are empty and rules based on
   purchases, revenue, ROAS or cost per purchase skip TikTok campaigns instead of treating

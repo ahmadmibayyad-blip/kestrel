@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "kestrel-tiktok-relay",
+  "title": "Kestrel TikTok relay",
+  "description": "Relays the Kestrel app's browser requests to the TikTok Marketing API.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "usesStandbyMode": true
+}

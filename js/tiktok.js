@@ -8,22 +8,38 @@
   const T = (K.tiktok = K.sources.tiktok = {
     platform: 'tiktok', label: 'TikTok Ads',
     version: 'v1.3',
-    conn: null,         // { token, advertiserId, account: { id, name, currency }, allow }
+    conn: null,         // { token, advertiserId, relay, account: { id, name, currency }, allow }
     get allowChanges() { return !!(T.conn && T.conn.allow); },
   });
 
   /** GET sends params in the address (lists as JSON text, as TikTok expects); POST sends JSON. */
+  /* TikTok refuses requests sent from web pages, so in the browser every call goes through a
+     relay (see relay/README.md). The scheduler runs outside a browser and calls TikTok directly. */
+  function endpoint(conn, path) {
+    if (!conn.relay) return new URL(API + T.version + '/' + path);
+    const u = new URL(conn.relay);
+    u.pathname = u.pathname.replace(/\/$/, '') + '/open_api/' + T.version + '/' + path;
+    return u;
+  }
   async function call(method, path, params, conn) {
     conn = conn || T.conn;
-    const url = new URL(API + T.version + '/' + path);
+    const url = endpoint(conn, path);
     const opt = { method, headers: { 'Access-Token': conn.token } };
     if (method === 'GET') Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v));
     else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(params); }
     let res;
     try { res = await fetch(url, opt); }
-    catch (e) { throw new Error('Could not reach TikTok from this browser. TikTok may not accept requests from web pages, or an ad blocker is in the way. The scheduler in the README does not have this limit.'); }
+    catch (e) {
+      throw new Error(conn.relay ? 'Could not reach the relay. Check the relay address and that the relay is running.'
+        : typeof document !== 'undefined' ? 'TikTok does not accept requests from web pages. Add a relay address (see relay/README.md in the repository).'
+        : 'Could not reach TikTok.');
+    }
     const j = await res.json().catch(() => null);
-    if (!j) throw new Error('TikTok returned an unreadable response (' + res.status + ').');
+    if (!j || typeof j.code !== 'number') {
+      const why = j && j.error && j.error.message ? ': ' + j.error.message : ' (' + res.status + ').';
+      throw new Error(conn.relay ? 'The relay did not pass on an answer from TikTok' + why + ' Check the relay address and the token in it.' : 'TikTok returned an unreadable response' + why);
+    }
+    if (j.code === -1) throw new Error('Relay: ' + j.message);
     if (j.code !== 0) {
       if (j.code === 40105 || j.code === 40104) throw new Error('Your TikTok access token is invalid or was revoked. Create a new one and connect again.');
       if (j.code === 40002 || j.code === 40001 && /permission/i.test(j.message || '')) throw new Error('This TikTok token is not allowed to do that. Check the app has the Ads Management and Reporting permissions for this advertiser. (' + j.message + ')');
@@ -107,8 +123,9 @@
   T.setBudget = (c, budget) => call('POST', 'campaign/update/', { advertiser_id: T.conn.advertiserId, campaign_id: c.tid, budget });
 
   T.restore = function () { T.conn = K.connStore.read(STORE); return !!(T.conn && T.conn.token && T.conn.account); };
-  T.connect = async function (token, advertiserId, remember) {
-    const conn = { token: token.trim(), advertiserId: String(advertiserId).replace(/\D/g, ''), allow: false };
+  T.connect = async function (token, advertiserId, relay, remember) {
+    const conn = { token: token.trim(), advertiserId: String(advertiserId).replace(/\D/g, ''), relay: (relay || '').trim(), allow: false };
+    if (conn.relay && !/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(conn.relay)) throw new Error('The relay address should start with https://');
     conn.account = await T.lookup(conn);
     T.conn = conn;
     try { await K.loadLive(T); } catch (e) { T.conn = null; await K.loadLive().catch(() => K.useSample()); throw e; }

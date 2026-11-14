@@ -13,7 +13,7 @@
   ui.conn = { error: '', busy: '', remember: false };
   ui.meta = { token: '', accounts: null };
   ui.goog = { devToken: '', customerId: '', loginId: '', clientId: '', accessToken: '' };
-  ui.tik = { token: '', advertiserId: '' };
+  ui.tik = { token: '', advertiserId: '', relay: '' };
 
   function ago(t) {
     if (!t) return 'never';
@@ -330,13 +330,15 @@
       <ol class="how">
         <li>In TikTok for Business Developers, create an app and request the Ads Management and Reporting permissions. TikTok reviews new apps before they can be used.</li>
         <li>Authorise the app for your ad account and copy the <b>access token</b> it gives you.</li>
-        <li>Paste the token and the advertiser ID here.</li>
+        <li>Set up the relay described in relay/README.md and copy its address.</li>
+        <li>Paste the token, the advertiser ID and the relay address here.</li>
       </ol>
       <label class="field"><span>Access token</span><input type="password" data-ui="tik.token" autocomplete="off" spellcheck="false" value="${esc(t.token)}"></label>
       <label class="field"><span>Advertiser ID</span><input type="text" data-ui="tik.advertiserId" autocomplete="off" spellcheck="false" value="${esc(t.advertiserId)}"></label>
+      <label class="field"><span>Relay address. TikTok does not accept requests from web pages, so the app needs one (see relay/README.md in the repository)</span><input type="password" data-ui="tik.relay" autocomplete="off" spellcheck="false" value="${esc(t.relay)}" placeholder="https://…apify.actor?token=…"></label>
       <label class="check"><input type="checkbox" id="t-remember" ${ui.conn.remember ? 'checked' : ''}> Remember this connection on this device</label>
       <p><button class="btn primary" data-act="t-connect">Connect TikTok Ads</button></p>
-      <p class="hint">The token stays in this browser and is sent only to business-api.tiktok.com. "Purchases" for TikTok campaigns are complete-payment events from your TikTok pixel. Kestrel starts read-only.</p>
+      <p class="hint">The token stays in this browser and is sent only to your relay, which passes it to TikTok. "Purchases" for TikTok campaigns are complete-payment events from your TikTok pixel. Kestrel starts read-only.</p>
     </div>`;
   }
   function connection() {
@@ -499,9 +501,10 @@
     else if (act === 't-connect') {
       const t = ui.tik, remember = $('#t-remember').checked;
       if (!t.token.trim() || !t.advertiserId.replace(/\D/g, '')) { toast('Enter the access token and the advertiser ID first'); return; }
+      if (!t.relay.trim()) { toast('Enter the relay address. TikTok does not accept requests straight from a web page.'); return; }
       ui.conn.remember = remember;
-      await loadLive(() => K.tiktok.connect(t.token, t.advertiserId, remember), 'Reading your TikTok Ads account…');
-      if (K.tiktok.conn) { ui.tik = { token: '', advertiserId: '' }; toast(`Connected to ${K.tiktok.conn.account.name}`); }
+      await loadLive(() => K.tiktok.connect(t.token, t.advertiserId, t.relay, remember), 'Reading your TikTok Ads account…');
+      if (K.tiktok.conn) { ui.tik = { token: '', advertiserId: '', relay: '' }; toast(`Connected to ${K.tiktok.conn.account.name}`); }
       return;
     }
     else if (act === 'g-renew') {
