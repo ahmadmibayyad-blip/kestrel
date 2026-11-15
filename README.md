@@ -23,16 +23,38 @@ Then open http://localhost:8000/ or open `index.html` directly.
 
 The Connection screen reads a Meta ad account directly from the browser (`js/meta.js`).
 
-1. In Meta for Developers, create an app and add the Marketing API.
-2. Create an access token with `ads_read`. Add `ads_management` only if Kestrel should
-   pause campaigns or change budgets.
-3. Open the app, go to Connection, paste the token, pick the ad account.
+You sign in with **Log in with Facebook**: the browser goes to Facebook's own login page and
+comes back connected. Facebook only allows this for a registered app, so there is a one-time
+setup on your Meta app:
+
+1. In Meta for Developers, create an app (or open the one you have) and add the
+   **Marketing API** and **Facebook Login** products.
+2. In Facebook Login → Settings, add the address you open Kestrel from to **Valid OAuth
+   Redirect URIs**, exactly, for example
+   `https://ahmadmibayyad-blip.github.io/kestrel/app.html`. Keep "Client OAuth login" and
+   "Web OAuth login" switched on.
+3. Copy the **App ID** from the app's dashboard. It is a public number, not a secret.
+4. In Kestrel, go to Connection, enter the App ID (asked once), click **Log in with
+   Facebook**, approve, then pick the ad account.
+
+To skip typing the App ID, set `DEFAULT_APP_ID` in `js/meta.js`.
 
 What to know:
 
-- The token stays in the browser and is sent only to `graph.facebook.com`. It is kept for
-  the tab, or on the device if "remember" is ticked. Anyone using that browser profile can
-  use a remembered token.
+- While the Meta app is in development mode, only people with a role on the app (you, and
+  anyone you add as admin, developer or tester) can log in. Letting the public log in needs
+  Meta's App Review for `ads_read` / `ads_management` and business verification.
+- A login lasts an hour or two. When it runs out Kestrel says so, and "Log in with Facebook
+  again" renews it without disconnecting the account.
+- Tick "Also let Kestrel pause campaigns…" before logging in to grant permission for changes.
+  Without it Facebook only grants looking, whatever the "Allow changes" switch says.
+- Kestrel never sees your password. What Facebook returns stays in the browser and is sent
+  only to `graph.facebook.com`. It is kept for the tab, or on the device if "remember" is
+  ticked; anyone using that browser profile can use a remembered login.
+- "Paste an access token instead" is still there, for a token made in Meta's Graph API
+  Explorer or a long-lived system user token.
+- The scheduler cannot log in with Facebook. It needs a long-lived token as a repository
+  secret.
 - The app starts read-only. "Allow changes" must be turned on before anything is sent to
   Meta, and each change asks for confirmation. Changes affect live spend.
 - It loads active and paused campaigns, 60 days of daily results, and ads with spend in the
@@ -40,8 +62,6 @@ What to know:
 - Budget edits apply to campaigns with a campaign-level daily budget. Campaigns whose
   budgets are set on ad sets are shown but not changed.
 - Rules run when you press Run, or automatically (see below).
-- Tokens from Meta's Graph API Explorer expire after an hour or two. A long-lived or system
-  user token lasts longer.
 - Requests name a Meta API version (`K.meta.version` in `js/meta.js`). When Meta retires it, its error names the
   version to use and Kestrel switches to that by itself.
 

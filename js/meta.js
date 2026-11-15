@@ -39,14 +39,51 @@
       // "(#2635) You are calling a deprecated version of the Ads API. Please upgrade to the latest version: v27.0."
       const newer = e.code === 2635 && /v\d+\.\d+/.exec(String(e.message || ''));
       if (newer && !upgraded && !full && newer[0] !== M.version) { M.version = newer[0]; return api(path, params, method, true); }
-      if (e.code === 190) throw new Error('Your Meta access token is expired or invalid. Paste a new one on the Connection screen.');
-      if (e.code === 200 || e.code === 10) throw new Error('This token is not allowed to do that. It needs the ads_read permission to read and ads_management to make changes.');
+      if (e.code === 190) throw new Error('Your Facebook login has expired or is no longer valid. Log in with Facebook again on the Connection screen.');
+      if (e.code === 200 || e.code === 10) throw new Error('This Facebook login is not allowed to do that. Looking needs the ads_read permission; making changes needs ads_management, which you grant by ticking the box before logging in.');
       throw new Error(e.error_user_msg || e.message || 'Meta returned an error.');
     }
     if (!res.ok) throw new Error('Meta returned an error (' + res.status + ').');
     return j;
   }
   M.api = api;
+
+  /* ---------- Log in with Facebook ----------
+     The browser goes to Facebook's own login page and comes back with a short-lived token in the
+     address. No password or app secret ever reaches Kestrel. Facebook only allows this for a
+     registered app, so it needs that app's ID (a public number, not a secret). Set DEFAULT_APP_ID
+     to save everyone typing it; otherwise it is asked once and remembered on the device. */
+  const DEFAULT_APP_ID = '';
+  const APP_KEY = 'kestrel-meta-app-id', STATE_KEY = 'kestrel-fb-state';
+  M.appId = function () { try { return localStorage.getItem(APP_KEY) || DEFAULT_APP_ID; } catch (e) { return DEFAULT_APP_ID; } };
+  M.saveAppId = function (id) { try { localStorage.setItem(APP_KEY, id); } catch (e) { /* storage unavailable */ } };
+  /** The address Facebook returns to. It must be listed in the app's "Valid OAuth Redirect URIs". */
+  M.redirectUri = () => location.origin + location.pathname;
+  /** Where to send the browser to log in. `write` also asks for permission to make changes. */
+  M.loginUrl = function (appId, write) {
+    const state = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    try { sessionStorage.setItem(STATE_KEY, state); } catch (e) { /* storage unavailable */ }
+    const q = new URLSearchParams({ client_id: appId, redirect_uri: M.redirectUri(), response_type: 'token', state,
+      scope: write ? 'ads_read,ads_management,pages_show_list,pages_read_engagement' : 'ads_read' });
+    return 'https://www.facebook.com/' + M.version + '/dialog/oauth?' + q;
+  };
+  /** Call once at start-up. If the page was opened by Facebook returning from a login, takes the
+      token out of the address (and off the screen) and returns { token } or { error }; else null. */
+  M.readLogin = function () {
+    const frag = new URLSearchParams(location.hash.replace(/^#/, '')), query = new URLSearchParams(location.search);
+    const failed = frag.get('error') || query.get('error');
+    if (!frag.has('access_token') && !failed) return null;
+    let expected = '';
+    try { expected = sessionStorage.getItem(STATE_KEY) || ''; sessionStorage.removeItem(STATE_KEY); } catch (e) { /* storage unavailable */ }
+    history.replaceState(null, '', location.pathname + '#connection');
+    if (failed) {
+      const why = frag.get('error_description') || query.get('error_description') || '';
+      return { error: /denied|cancel/i.test(failed + why) ? 'The Facebook login was cancelled, so nothing was connected.' : 'Facebook did not complete the login' + (why ? ': ' + why.replace(/\+/g, ' ') : '.') };
+    }
+    // The state check makes sure this login is the one this page started, not one someone else linked you to.
+    if (!expected || frag.get('state') !== expected) return { error: 'The Facebook login could not be verified. Please log in again.' };
+    return { token: frag.get('access_token') };
+  };
   async function all(path, params) {
     let out = [], j = await api(path, params);
     for (let n = 0; n < 60; n++) {
@@ -197,5 +234,7 @@
     K.connStore.write(STORE, M.conn, remember);
   };
   M.setAllow = function (on) { M.conn.allow = !!on; K.connStore.write(STORE, M.conn, K.connStore.remembered(STORE)); };
+  /** Swaps in a fresh Facebook login for the account already connected. */
+  M.renew = function (token) { M.conn.token = token; K.connStore.write(STORE, M.conn, K.connStore.remembered(STORE)); };
   M.disconnect = function () { M.conn = null; K.connStore.clear(STORE); };
 })();

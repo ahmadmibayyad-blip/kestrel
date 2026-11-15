@@ -210,3 +210,5 @@ table.c-list td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0
 details.share { margin: 0 0 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 20px; }
 details.share summary { cursor: pointer; font-weight: 600; }
 details.share pre { font: 0.875rem/1.55 var(--body); white-space: pre-wrap; margin: 14px 0; max-width: 80ch; }
+.btn.fb { background: #1877f2; border-color: #1877f2; }
+.btn.fb:hover { background: #0f5fcc; border-color: #0f5fcc; color: #fff; }

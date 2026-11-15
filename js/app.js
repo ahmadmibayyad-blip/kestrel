@@ -13,7 +13,7 @@
   const view = () => (location.hash.replace('#', '') || 'overview');
   const live = () => K.mode === 'live';
   ui.conn = { error: '', busy: '', remember: false };
-  ui.meta = { token: '', accounts: null };
+  ui.meta = { token: '', accounts: null, appId: K.meta.appId(), write: false };
   ui.goog = { devToken: '', customerId: '', loginId: '', clientId: '', accessToken: '' };
   ui.tik = { token: '', advertiserId: '', relay: '' };
   ui.snap = { clientId: '', clientSecret: '', refreshToken: '', accessToken: '', accounts: null, token: null };
@@ -317,24 +317,25 @@
         : `Kestrel only reads. Rules still show what they would change, but nothing is sent to ${name} until you turn this on.`}</span></p>`;
   }
   function metaPanel() {
-    const s = K.meta, m = ui.meta;
+    const s = K.meta, m = ui.meta, appId = K.meta.appId();
     if (s.conn) return `<div class="panel"><h2>Meta: connected to ${esc(s.conn.account.name)}</h2>
-      <p class="muted">Ad account ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}.</p>${allowRow(s)}
-      <p><button class="btn ghost danger" data-act="disconnect" data-src="meta">Disconnect Meta</button></p></div>`;
-    return `<div class="panel"><h2>Connect a Meta ad account</h2>
-      <ol class="how">
-        <li>In Meta for Developers, create an app and add the Marketing API.</li>
-        <li>Create an access token with the <b>ads_read</b> permission. Add <b>ads_management</b> only if you want Kestrel to pause campaigns or change budgets.</li>
-        <li>Paste the token here.</li>
-      </ol>
-      <label class="field"><span>Access token</span><input type="password" id="token" autocomplete="off" spellcheck="false" value="${esc(m.token)}" placeholder="Paste your Meta access token"></label>
-      ${m.accounts ? (m.accounts.length ? `
+      <p class="muted">Ad account ${esc(s.conn.account.id)}, ${esc(s.conn.account.currency)}. A Facebook login lasts an hour or two; log in again when Kestrel says it has expired.</p>${allowRow(s)}
+      <p>${appId ? '<button class="btn" data-act="fb-login">Log in with Facebook again</button> ' : ''}<button class="btn ghost danger" data-act="disconnect" data-src="meta">Disconnect Meta</button></p></div>`;
+    const picker = m.accounts ? (m.accounts.length ? `
         <label class="field"><span>Ad account</span><select id="acct">${m.accounts.map((x, i) => `<option value="${i}">${esc(x.name)} (${esc(x.id)}, ${esc(x.currency)})${x.active ? '' : ', not active'}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" id="remember" ${ui.conn.remember ? 'checked' : ''}> Remember this connection on this device</label>
-        <p><button class="btn primary" data-act="connect">Connect this account</button> <button class="btn ghost" data-act="find-accounts">Look again</button></p>`
-        : `<p class="empty">This token cannot see any ad accounts. Check it was created by someone with access to the account.</p><p><button class="btn" data-act="find-accounts">Look again</button></p>`)
-        : `<p><button class="btn primary" data-act="find-accounts">Find my ad accounts</button></p>`}
-      <p class="hint">The token stays in this browser and is sent only to graph.facebook.com. Unless you tick "remember", it is forgotten when you close this tab. Kestrel starts read-only.</p>
+        <p><button class="btn primary" data-act="connect">Connect this account</button></p>`
+      : `<p class="empty">This Facebook login cannot see any ad accounts. Log in with the account that manages your ads.</p>`) : '';
+    return `<div class="panel"><h2>Connect a Meta ad account</h2>
+      ${m.accounts ? picker : `
+      <p>Sign in with the Facebook account that manages your ads. Facebook asks you to approve what Kestrel may see, then brings you back here.</p>
+      <label class="field"><span>Facebook App ID${appId ? '' : ' (asked once, then remembered on this device)'}</span><input type="text" inputmode="numeric" data-ui="meta.appId" autocomplete="off" value="${esc(m.appId)}" placeholder="The number shown on your Meta app's dashboard"></label>
+      <label class="check"><input type="checkbox" id="fb-write" ${m.write ? 'checked' : ''}> Also let Kestrel pause campaigns, change budgets and create ads. Leave unticked to look only.</label>
+      <p><button class="btn primary fb" data-act="fb-login">Log in with Facebook</button></p>
+      <details class="alt"><summary>Paste an access token instead</summary>
+        <label class="field"><span>Access token</span><input type="password" id="token" autocomplete="off" spellcheck="false" value="${esc(m.token)}" placeholder="Paste your Meta access token"></label>
+        <p><button class="btn" data-act="find-accounts">Find my ad accounts</button></p></details>`}
+      <p class="hint">Your login is handled by Facebook; Kestrel never sees your password. What Facebook hands back stays in this browser and is sent only to graph.facebook.com. Kestrel starts read-only.</p>
     </div>`;
   }
   function googlePanel() {
@@ -600,6 +601,13 @@
       return;
     }
     else if (act === 'reset') { K.reset(); ui.draft = null; ui.sel.clear(); toast(live() ? 'Rules and log cleared' : 'Demo data reset'); }
+    else if (act === 'fb-login') {
+      const appId = (ui.meta.appId || K.meta.appId() || '').replace(/\D/g, ''), box = $('#fb-write');
+      if (!appId) { toast('Enter your Facebook App ID first. It is the number on your Meta app\'s dashboard.'); return; }
+      K.meta.saveAppId(appId);
+      location.href = K.meta.loginUrl(appId, box ? box.checked : K.meta.allowChanges);
+      return;
+    }
     else if (act === 'find-accounts') {
       const token = ui.meta.token.trim();
       if (!token) { toast('Paste an access token first'); return; }
@@ -611,7 +619,7 @@
       const account = ui.meta.accounts[+$('#acct').value], remember = $('#remember').checked, token = ui.meta.token.trim();
       ui.conn.remember = remember;
       await loadLive(() => K.meta.connect(token, account, remember), `Reading ${account.name} from Meta…`);
-      if (K.meta.conn) { ui.meta = { token: '', accounts: null }; toast(`Connected to ${account.name}`); }
+      if (K.meta.conn) { ui.meta = { token: '', accounts: null, appId: K.meta.appId(), write: false }; toast(`Connected to ${account.name}`); }
       return;
     }
     else if (act === 'g-connect') {
@@ -743,6 +751,17 @@
   // What the Create ads screen (js/create.js) borrows from this file.
   K.ui = { toast, render, blocked, live, esc };
   // Reopen the last Meta connection if there is one; otherwise show the sample account.
-  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore(), K.snapchat.restore(), K.pinterest.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(autoTick);
-  else { render(); autoTick(); }
+  // If Facebook has just sent the browser back from a login, pick the token up and go on to choosing the ad account.
+  const fbLogin = K.meta.readLogin();
+  const afterStart = () => {
+    autoTick();
+    if (!fbLogin) return;
+    if (fbLogin.error) { ui.conn.error = fbLogin.error; render(); return; }
+    // Already connected: this was a fresh login for the same account, so keep the account and swap the login in.
+    if (K.meta.conn) { K.meta.renew(fbLogin.token); loadLive(() => K.loadLive(), 'Loading the latest data…').then(() => toast(ui.conn.error || (K.liveErrors || [])[0] || 'Logged in again')); return; }
+    ui.meta.token = fbLogin.token;
+    onClick({ dataset: { act: 'find-accounts' } }).catch((err) => { ui.conn.error = err.message; render(); });
+  };
+  if ([K.meta.restore(), K.google.restore(), K.tiktok.restore(), K.snapchat.restore(), K.pinterest.restore()].some(Boolean)) loadLive(() => K.loadLive(), 'Reading your ad accounts…').then(afterStart);
+  else { render(); afterStart(); }
 })();
